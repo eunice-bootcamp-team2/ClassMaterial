@@ -22,7 +22,7 @@
 
 ✅ 요구사항이 명확할 때
 - “입력 → 출력이 분명한 기능”
-- 예: 계산, 검증 로직, 데이터 변환, 비즈니스 규칙
+- 예: 계산, 검증 로직, 데이터 변환, 비즈니스 규칙(프로그램이 반드시 지켜야하는 규칙)
 ```python
 def add(a, b):
     return a + b
@@ -223,10 +223,7 @@ return a + b
 
 ---
 ## 4. Python에서 단위 테스트 – `unittest` 모듈
-
 `unittest`는 **파이썬 표준 라이브러리**에 포함되어 있어서 추가 설치 없이 바로 사용 가능합니다.
-
----
 
 ##### 4-1. 기본 구조 (가장 작은 단위의 테스트 파일)
 
@@ -256,7 +253,37 @@ if __name__ == "__main__":
 - 추천: `test_math_utils.py`, `test_bank.py`
 - 이유: `python -m unittest discover`가 기본적으로 `test*.py` 파일을 자동 탐색함
 
-> 단, python test_example.py로 “직접 실행”할 때는 파일명이 꼭 test_일 필요는 없음
+###### 자동으로 찾는 파일 예: 그래서 **`test_파일이름.py`** 가 가장 안전하고 표준이에요
+
+| 파일명             | 발견됨? | 이유            |
+| --------------- | ---- | ------------- |
+| `test_math.py`  | ✅    | test로 시작함     |
+| `test_bank.py`  | ✅    | test로 시작함     |
+| `tests_user.py` | ❌    | test로 시작하지 않음 |
+| `bank_test.py`  | ❌    | 뒤에 test가 붙음   |
+| `math.py`       | ❌    | test가 없음      |
+
+직접 실행 할 때는 왜 상관없을까?
+```bash
+python test_example.py
+```
+	이건 unittest에게 찾으라고 시키는 게 아니라, 그냥 이 파일을 직접 실행해!
+
+왜 그래도 test_로 시작하는 걸 “강력 추천”할까?
+팀원이 아래만 치면 전체 테스트가 돌아야 하거든요:
+```bash
+python -m unittest discover
+```
+
+나중에 테스트가 많아지면 “직접 실행 방식”은 번거롭다
+프로젝트가 이렇게 되면
+```
+tests/
+ ├── test_users.py
+ ├── test_orders.py
+ ├── test_payments.py
+```
+하나씩 실행하는 건 너무 힘들죠
 
 ---
 
@@ -266,7 +293,38 @@ class TestSomething(unittest.TestCase):
     ...
 ```
 
-- 이유: unittest는 `TestCase`를 상속한 클래스를 “테스트 묶음”으로 인식함
+비유로 이해하기
+> `unittest.TestCase` = 테스트 도구가 들어있는 가방
+
+테스트를 하려면:
+- 비교하기
+- 실패/성공 표시하기
+- 에러 메시지 보여주기 같은 기능이 필요하죠?
+
+이 기능들이 전부 `TestCase` 안에 들어 있어요.
+그래서 위와 같이 상속을 하면 이 클래스는 테스트 클래스야! 라고 unittest가 알아봅니다.
+
+예시코드
+```python
+import unittest
+
+class TestMath(unittest.TestCase):
+    def test_add(self):
+        self.assertEqual(1 + 1, 2)
+```
+
+여기서:
+- `TestMath` → 테스트 묶음
+- `self.assertEqual()` → TestCase 가방 안에 있는 “비교 도구”
+    
+만약 상속을 빼면?
+```python
+class TestMath:
+    def test_add(self):
+        self.assertEqual(1 + 1, 2)
+```
+- 실행하면 **에러** (assertEqual이 없음)
+- unittest도 “테스트 클래스가 아니네?” 하고 무시합니다.
 
 ---
 
@@ -276,7 +334,30 @@ def test_example(self):
     ...
 ```
 
-- 이유: unittest는 `test_`로 시작하는 메서드만 자동 실행 대상으로 잡음
+왜 이름이 중요할까?
+
+unittest 입장:
+> “파일과 클래스 안에 있는 함수들 중에서,  
+> 이름이 test로 시작하는 것만 실행해야지!”
+
+비교예제: 정상적으로 실행됨
+```python
+class TestUser(unittest.TestCase):
+
+    def test_signup(self):
+        print("회원가입 테스트!")
+```
+
+실행되지 않음
+```python
+class TestUser(unittest.TestCase):
+
+    def signup(self):
+        print("이건 실행 안 됨!")
+```
+테스트를 돌려도 출력이 안 나옵니다. 
+unittest가 자동으로 실행할 함수라고 알아듣게 하기 위함
+테스트 함수 이름 → test_ 로 시작해야 “자동 실행”된다를 기억하세요.
 
 ---
 
@@ -284,24 +365,97 @@ def test_example(self):
 
 - 핵심은 “자동 검증”입니다. `print()`로 확인하면 테스트가 아닙니다.
 
+왜 `print()`는 테스트가 아닐까?
+```python
+print(add(1, 2))   # 3이 나오네?  OK인가?
+```
+사람이 눈으로 보고 확인해야 하죠.  
+→ 실수하기 쉽고, 자동화가 안 됩니다.
+
+테스트는 “자동으로 확인”해야 한다
 ```python
 self.assertEqual(actual, expected)
 ```
+- `expected` = 내가 기대하는 값
+- `actual` = 코드가 실제로 만든 값
+
+예제
+```python
+import unittest
+
+def add(a, b):
+    return a + b
+
+class TestAdd(unittest.TestCase):
+
+    def test_add_numbers(self):
+        result = add(2, 3)
+        self.assertEqual(result, 5)   # 기대: 5
+```
+👉 만약 결과가 6이라면?
+
+> ❌ 테스트 실패  
+> 에러 메시지로 “5가 아니다!”라고 알려줌
 
 ---
 
 ✅ 규칙 5) 테스트는 서로 독립적이어야 한다 (순서에 의존하지 않기)
+	앞 테스트의 결과가 뒤 테스트에 영향을 주면 안 된다!
 
 - 테스트 실행 순서는 보장되지 않을 수 있음
 - “이전 테스트 결과가 다음 테스트에 영향을 주면” 좋은 테스트가 아님
 
 ✅ 좋은 예: 각 테스트에서 필요한 데이터는 그 테스트가 준비
 
-✅ 더 깔끔한 방법: `setUp()` 사용
+❌ 나쁜 예 (순서에 의존)
 ```python
-def setUp(self):
-    self.data = [1, 2, 3]
+class TestList(unittest.TestCase):
+
+    items = []
+
+    def test_add_item(self):
+        self.items.append(1)
+        self.assertEqual(len(self.items), 1)
+
+    def test_length(self):
+        self.assertEqual(len(self.items), 0)   # ❌ 실패!
 ```
+두 번째 테스트는  
+👉 첫 번째 테스트가 리스트를 바꿔버려서 실패합니다.
+
+✅ 좋은 예 — 각자 준비, 각자 검사
+```python
+class TestList(unittest.TestCase):
+
+    def test_add_item(self):
+        items = []
+        items.append(1)
+        self.assertEqual(len(items), 1)
+
+    def test_empty_list(self):
+        items = []
+        self.assertEqual(len(items), 0)
+```
+각 테스트가 자기 것만 준비하죠
+
+✨ 더 깔끔한 방법: `setUp()`
+> “테스트를 시작하기 전에 항상 실행되는 준비 함수”
+```python
+class TestList(unittest.TestCase):
+
+    def setUp(self):
+        self.items = [1, 2, 3]
+
+    def test_length(self):
+        self.assertEqual(len(self.items), 3)
+
+    def test_first_item(self):
+        self.assertEqual(self.items[0], 1)
+```
+각 테스트마다:
+1️⃣ `setUp()`이 새 리스트를 만들고  
+2️⃣ 그 리스트를 갖고 테스트를 시작합니다
+➡️ 그래서 서로 **절대 영향을 주지 않음**
 
 ---
 
@@ -310,9 +464,20 @@ def setUp(self):
 if __name__ == "__main__":
     unittest.main()
 ```
+이 파일을 직접 실행하면  여기 있는 테스트들을 전부 실행해! 라는 뜻입니다.
 
-- `python test_example.py`처럼 **파일을 직접 실행할 때** 테스트를 돌려주는 실행 트리거
-- 하지만 `python -m unittest discover`로 실행할 때는 없어도 동작함(있어도 문제 없음)
+직접 실행할 때
+```bash
+python test_example.py
+```
+`unittest.main()`이 테스트를 돌립니다.
+
+하지만 프로젝트 전체 테스트를 돌릴 때
+```bash
+python -m unittest discover
+```
+unittest가 자동으로 테스트 파일을 찾아 실행하므로  
+`unittest.main()`이 없어도 잘 돌아갑니다.
 
 ---
 
@@ -365,7 +530,7 @@ OK
 ##### 4-5. 초보자용 한 줄 요약
 
 > unittest가 테스트를 자동으로 찾는 핵심 규칙은
-> 파일명 test.py + TestCase 상속 + test_ 메서드 + assert 검증 + 테스트 독립성* 이다.
+> 파일명 test.py + TestCase 상속 + test_ 메서드 + assert 검증 + 테스트 독립성 이다.
 
 ---
 ### [실전테스트] 미니 쇼핑몰 결제/회원 시스템 (unittest + TDD 실습)
@@ -484,7 +649,7 @@ OK
 ---
 ### 2) 대표적인 assert 메서드들
 
-unittest는 “기대값 vs 실제값”을 비교하는 assert 메서드들로 검증합니다.
+unittest는 “기대값 vs 실제값”을 비교하는 assert 메서드들로 검증합니다. ==어서트==
 ```python
 self.assertEqual(a, b)       # a == b
 self.assertNotEqual(a, b)    # a != b
