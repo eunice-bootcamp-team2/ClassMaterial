@@ -242,6 +242,12 @@ if __name__ == "__main__":
     unittest.main()
 ```
 
+실행:
+```bash
+python3 test_example.py
+```
+
+
 ---
 
 ##### 4-2. unittest가 테스트를 “찾는 규칙”
@@ -269,7 +275,7 @@ python test_example.py
 ```
 	이건 unittest에게 찾으라고 시키는 게 아니라, 그냥 이 파일을 직접 실행해!
 
-왜 그래도 test_로 시작하는 걸 “강력 추천”할까?
+왜 그래도 test_로 시작하는 걸 ==강력 추천==할까?
 팀원이 아래만 치면 전체 테스트가 돌아야 하거든요:
 ```bash
 python -m unittest discover
@@ -568,6 +574,15 @@ mkdir tdd_shop
 
 # 3) 그 폴더로 이동
 cd tdd_shop
+
+# 내가 생성한 폴더로 이동
+code -r .
+```
+
+####  1-2-1) venv 패키지 설치
+```bash
+sudo apt update
+sudo apt install -y python3-venv
 ```
 
 #### 1-3) 가상환경 만들기(선택이지만 추천)
@@ -576,7 +591,10 @@ cd tdd_shop
 python3 -m venv venv
 
 # 가상환경 활성화
-source venv/bin/activate
+source ./venv/bin/activate
+
+# 가상환경 나가기
+deactivate
 
 # 프롬프트 앞에 (venv) 붙으면 성공
 ```
