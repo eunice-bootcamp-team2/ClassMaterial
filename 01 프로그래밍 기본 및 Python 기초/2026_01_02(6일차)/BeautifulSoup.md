@@ -16,7 +16,9 @@ HTML 파서(parser)란?
 
 초보자 단계에서는 아래만 써도 100% 충분합니다.
 ```python
-BeautifulSoup(html, "html.parser")
+from bs4 import BeautifulSoup
+
+soup = BeautifulSoup(html, "html.parser")
 ```
 
 `lxml`, `html5lib`은 **HTML이 깨진 경우**에 더 강력하게 처리하는 심화 주제입니다.
@@ -516,7 +518,7 @@ import requests
 from bs4import BeautifulSoup
 
 deffetch_example():
-    url ="<https://example.com>"
+    url ="https://example.com"
 
 # 1) 웹 요청 보내기 (GET)
     response = requests.get(url)
