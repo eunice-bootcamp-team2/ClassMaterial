@@ -74,6 +74,7 @@ cd ~
 # 실습용 폴더 생성
 mkdir streamlit_day8
 cd streamlit_day8
+code -r . # 새로 만든 폴더로 이동
 ```
 
 가상환경 만들기
@@ -85,7 +86,14 @@ cd streamlit_day8
     
 가상환경 생성
 ```bash
+sudo snap install astral-uv --classic
+brew install uv
 uv venv
+```
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
 ```
 
 가상환경 활성화
@@ -96,8 +104,11 @@ source .venv/bin/activate
 Streamlit 설치 (실습 필수 라이브러리)
 ```bash
 uv pip install streamlit pandas
+
+pip install streamlit pandas
 ```
 	가상환경을 쓴다면 → 프로젝트마다 설치해야 합니다.
+
 
 설치 확인
 ```bash
@@ -202,7 +213,7 @@ age = st.number_input("나이", min_value=0, max_value=120)
 > 버튼이 눌렸는지 여부만 `True / False`로 알려준다 ⭕
 
 ```python
-clicked = st.button("확인")
+clicked = st.button("확인") # True
 if clicked:
     st.success("버튼이 눌렸어요!")
 else:
@@ -221,7 +232,7 @@ else:
 ### Streamlit 전체 코드 구조 (공식 틀)
 
 ```python
-import streamlitas st# 1️⃣ 라이브러리
+import streamlit as st# 1️⃣ 라이브러리
 
 # 2️⃣ 화면 구성
 st.title("제목")
@@ -837,7 +848,7 @@ echo "month,sales
 code upload_chart.py
 ```
 
-코드 작성
+코드 작성 ---
 ```python
 import streamlit as st
 import pandas as pd
@@ -866,7 +877,7 @@ if uploaded is not None:
     numeric_df = df.select_dtypes(include=["number"])
 
     # 숫자 컬럼이 없으면 차트를 못 그리므로 안내
-    if numeric_df.shape[1] == 0:
+    if numeric_df.shape[1] == 0: # df.shape -> (행 개수, 열 개수) (2,0)
         st.warning("숫자 컬럼이 없어서 차트를 그릴 수 없습니다.")
         st.write("예: sales 같은 컬럼이 숫자여야 합니다.")
     else:
@@ -1117,6 +1128,10 @@ else:
 📘 문제 설명
 저장된 감정 기록을 이용해 감정별 횟수 통계를 만들고 표와 막대 그래프로 출력하세요.
 
+`[전체 흐름]`
+페이지 설정 → 세션에 감정 저장 공간 준비 → `[기록 탭]`에서 감정 추가/삭제 →  
+`[통계 탭]`에서 저장된 감정으로 표·그래프 생성
+
 ---
 
 ✅ 요구사항
@@ -1233,6 +1248,73 @@ with tab_stats:
     st.bar_chart(mood_count.set_index("감정"))
 ```
 
+의사코드
+```python
+0️⃣ 페이지 초기 설정
+앱 제목을 "감정 기록/통계"로 설정한다
+페이지 아이콘과 레이아웃을 지정한다
+
+1️⃣ 세션 상태 초기화
+만약 세션에 "moods"라는 저장 공간이 없다면
+    빈 리스트를 만들어서 세션에 저장한다
+의미:
+- 사용자가 버튼을 눌러 추가한 **감정 기록을 기억하기 위한 공간** 
+- 새로고침 전까지 유지됨    
+
+2️⃣ 페이지 제목 출력
+페이지 상단에 "감정 기록 & 통계" 제목을 보여준다
+
+3️⃣ 화면을 두 개의 탭으로 나눈다
+탭 1: 감정 기록
+탭 2: 감정 통계    
+
+탭 1 — 감정 기록 화면
+감정 선택
+"오늘의 감정"을 선택할 수 있는 선택 박스를 만든다
+(행복, 좋음, 보통, 슬픔, 화남 중 하나)
+
+감정 추가 버튼
+"감정 추가" 버튼을 만든다
+
+만약 버튼을 눌렀다면
+    선택한 감정을 세션의 moods 리스트에 추가한다
+    "저장되었습니다" 메시지를 보여준다
+    
+저장된 감정 목록 출력
+"저장된 감정 목록" 제목을 보여준다
+
+만약 저장된 감정이 하나도 없다면
+    "아직 저장된 감정이 없습니다" 안내 메시지를 보여준다
+그렇지 않다면
+    저장된 감정을 1번부터 번호를 붙여 하나씩 화면에 출력한다
+    
+전체 삭제 버튼
+"전체 삭제" 버튼을 만든다
+
+만약 버튼을 눌렀다면
+    세션의 moods 리스트를 빈 리스트로 초기화한다
+    "모든 감정을 삭제했습니다" 경고 메시지를 보여준다   
+
+탭 2 — 감정 통계 화면
+데이터 존재 여부 확인
+만약 저장된 감정이 없다면
+    "먼저 감정을 기록해주세요" 안내 메시지를 보여주고
+    통계 처리를 중단한다
+
+감정 데이터를 표 형태로 변환
+세션에 저장된 감정 리스트를
+"감정"이라는 열을 가진 표(DataFrame)로 만든다
+
+감정별 개수 계산
+같은 감정끼리 묶는다
+각 감정이 몇 번 나왔는지 센다
+결과를 "감정 / 횟수" 형태의 표로 만든다
+
+통계 결과 출력
+감정별 횟수를 표로 보여준다
+감정별 횟수를 막대 그래프로 시각화한다    
+```
+
 ---
 
 📝 해설
@@ -1244,3 +1326,6 @@ with tab_stats:
     CSV, API, DB 데이터도 동일한 방식으로 처리 가능
     
 ---
+### 추가 자료 행 열
+
+![[Group 12.png]]
