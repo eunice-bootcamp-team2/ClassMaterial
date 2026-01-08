@@ -71,6 +71,19 @@ uv --version
 - `uv` 자체를 매번 설치 ❌  
 - 프로젝트용 가상환경을 매번 생성 ⭕
 
+디렉토리 구조
+```
+day9_api/                 # 오늘 실습 전체 폴더 (프로젝트 루트)
+├─ .venv/                 # uv venv로 만든 가상환경 폴더
+├─ seoul_air_api.py       # 서울시 미세먼지 API 호출 + JSON 파싱 + DataFrame + 필터링 메인 스크립트
+├─ browser_json.py        # JSONPlaceholder 예제로 "브라우저 vs requests" 비교용 연습 코드
+├─ secrets_example.py     # (선택) API_KEY를 코드 밖에서 관리하는 예시 파일
+├─ data/                  # (선택) 내려받은 데이터 저장용 폴더
+│  ├─ raw/                # 원본 JSON/CSV 저장
+└─ └─ processed/          # 전처리·필터링된 CSV/파켓 등
+
+```
+
 실습 준비 – 폴더 & 가상환경 만들기
 ```bash
 # 1) 오늘 실습용 폴더 만들기
@@ -83,6 +96,7 @@ uv venv
 # 3) 가상환경 활성화
 source .venv/bin/activate
 # (프롬프트 앞에 (venv) 가 보이면 성공)
+which python # 가상환경 경로가 맞는지 경로확인
 ```
 이 시점부터는 이 프로젝트 전용 파이썬 환경에서 작업 중 상태입니다.
 
@@ -146,6 +160,48 @@ print(response.text[:300])
 # ✅ 5) 응답이 JSON인지 XML인지 힌트 확인(중요)
 print("\nContent-Type:", response.headers.get("Content-Type"))
 ```
+
+의사코드
+```python
+1. requests 라는 웹요청 도구를 불러온다.
+
+2. 사용할 API 키를 문자열로 준비한다.
+   - 이 키는 나는 인증된 사용자입니다 라고 증명하는 열쇠 역할이다.
+
+3. 서울시 미세먼지 API 주소를 만든다.
+   - 기본 도메인: openapi.seoul.go.kr:8088
+   - 중간에 API_KEY를 끼워 넣는다.
+   - 응답 형식은 json 으로 요청한다.
+   - 데이터 종류는 airQualityAPI 이다.
+   - 1번째부터 5번째 데이터까지만 달라고 요청한다.
+   → 최종적으로 하나의 URL 문자열이 완성된다.
+
+4. 완성된 URL로 서버에게 GET 요청을 보낸다.
+   - “이 주소의 데이터를 주세요” 라고 요청한다.
+   - 서버가 10초 안에 대답 안 하면 요청을 중단한다.
+   - 서버가 보내준 응답 전체를 response 라는 변수에 저장한다.
+
+5. 응답의 HTTP 상태코드를 확인한다.
+   - response.status_code 를 꺼내서 화면에 출력한다.
+   - (200 이면: 서버가 요청을 정상 처리하고 답장을 줬다는 뜻)
+
+6. 응답 본문(내용)을 텍스트로 가져온다.
+   - response.text 의 앞부분 300글자만 출력한다.
+   - 실제 API 데이터일 수도 있고,
+     “인증키가 없습니다” 같은 안내 메시지일 수도 있다.
+
+7. 서버가 어떤 형식의 내용을 보냈는지 확인한다.
+   - response.headers 에서 "Content-Type" 값을 가져온다.
+   - application/json 이면 JSON,
+     application/xml 이면 XML 이라는 힌트다.
+   - 그 값을 화면에 출력한다.
+
+8. 여기까지 오면,
+   - 통신이 됐는지,
+   - 권한이 있는지,
+   - 데이터가 JSON 인지 XML 인지를 사람이 눈으로 판단할 수 있다.
+```
+
 
 실행 (가상환경 켜진 상태에서)
 ```bash
@@ -220,6 +276,26 @@ print("\n응답 원문:")
 print(response.text)
 # 서버가 보내준 실제 응답 내용(문자열)
 # JSON처럼 보이지만, 파이썬 입장에서는 아직 '글자(text)'
+```
+
+의사코드
+```python
+1. requests라는 “웹 서버에 요청을 보내는 도구”를 가져온다.
+
+2. 요청을 보낼 API 주소를 변수에 저장한다.
+   - 이 주소는 “게시글 1개를 주세요” 라는 의미의 테스트 API 이다.
+
+3. 이 URL로 GET 요청을 보낸다.
+   - 서버에게 데이터를 달라고 요청한다.
+   - 서버가 10초 안에 응답하지 않으면 요청을 취소한다.
+   - 서버가 보낸 결과(상태코드 + 내용)를 response 변수에 저장한다.
+
+4. 응답 상태코드를 꺼내서 출력한다.
+   - 200이면: 서버가 요청을 정상적으로 처리하고 응답을 보냈다는 뜻이다.
+
+5. 응답 본문 전체를 문자열 형태로 출력한다.
+   - JSON처럼 생겼지만,
+   - 이 시점에는 아직 “그냥 글자(text)”일 뿐이다.
 ```
 
 터미널에서 실행:
@@ -301,7 +377,7 @@ response.json()
 ```
 
 이걸 이렇게 생각하면 됩니다 👇
-> .json()은 “이 글자가 JSON 맞지? 그럼 파이썬 딕셔너리로 바꿔줄게”라는 변환기입니다.
+> .json( )은 “이 글자가 JSON 맞지? 그럼 파이썬 딕셔너리로 바꿔줄게”라는 변환기입니다.
 
 ---
 그래서 중요한 규칙 1개
@@ -379,9 +455,10 @@ HTTP 200
 
 ---
 `seoul_air_api.py` 수정
+`# 🔹 추가`, `# 🔹 변경`
 ```python
 import requests
-import pprint  # 딕셔너리를 보기 좋게 출력하기 위한 도구
+import pprint  # 🔹 추가: dict를 보기 좋게 출력하기 위한 도구
 
 # 1️⃣ 서울시 미세먼지 API 주소
 # ⚠️ 아직은 인증키를 넣지 않은 상태
@@ -395,26 +472,99 @@ response = requests.get(url, timeout=10)
 print("HTTP Status Code:", response.status_code)
 
 # 4️⃣ 서버가 준 '원본 텍스트' 확인
+#    🔹 이모지 폰트 추가
 print("\n📦 응답 원문 미리보기:")
-print(response.text[:300])   # 너무 길어서 앞부분만 출력
+print(response.text[:300])   # 너무 길어서 앞부분만 출력 (이 부분은 기존과 동일)
 
 # 5️⃣ 응답의 데이터 형식(Content-Type) 확인
+#    🔹 이모지 폰트 추가
 print("\n📦 Content-Type:")
 print(response.headers.get("Content-Type"))
 
 # 6️⃣ JSON일 때만 .json() 사용
+#    🔹 여기부터가 "새로 추가된 핵심 로직"
+#       - Content-Type이 JSON인 경우에만 response.json()을 호출
+#       - 아니면 에러 안내
 if response.headers.get("Content-Type", "").startswith("application/json"):
     print("\n✅ JSON 형식 확인 → 파이썬 dict로 변환 시도")
 
-    data = response.json()   # JSON → dict
-    print("\n🔍 타입 확인:", type(data))   # dict 확인
+    data = response.json()   # 🔹 추가: JSON → 파이썬 dict로 실제 변환
+    print("\n🔍 타입 확인:", type(data))   # 🔹 추가: dict 타입인지 확인
 
     print("\n📦 전체 구조(일부):")
+    # 🔹 추가: pprint로 딕셔너리 구조를 예쁘게 출력
     pprint.pprint(data, width=80, depth=2)
 
 else:
+    # 🔹 추가: JSON이 아닐 때(예: XML 에러 메시지) 안내 메시지 출력
     print("\n❌ JSON이 아님")
     print("👉 현재 응답은 XML 또는 에러 메시지입니다.")
+```
+
+의사코드
+```python
+1. 웹 서버에 HTTP 요청을 보내기 위한 도구 requests 를 불러온다.
+2. 파이썬 딕셔너리를 보기 좋게 출력하기 위한 pprint 도 같이 불러온다.
+
+3. 서울시 미세먼지 API를 호출하기 위해,  
+   내 API_KEY 를 문자열로 변수에 넣어둔다.
+
+4. API 호출에 사용할 URL 문자열을 만든다.
+   - 기본 주소: http://openapi.seoul.go.kr:8088/
+   - 그 뒤에 API_KEY 를 붙인다.
+   - 응답 형식은 json 으로 요청한다.
+   - 데이터 이름은 airQualityAPI 이다.
+   - 1번째부터 5번째 데이터까지 달라고 요청한다.
+   → 이 모든 정보를 합쳐서 하나의 URL 문자열로 만든다.
+
+5. 만든 URL 로 서버에 GET 요청을 보낸다.
+   - 서버가 10초 안에 응답하지 않으면 timeout 으로 중단한다.
+   - 서버가 보내준 응답 전체(상태코드, 헤더, 본문)를 response 변수에 저장한다.
+
+6. response 에서 HTTP 상태코드를 꺼내서 화면에 출력한다.
+   - 200 이면 요청 자체는 성공적으로 도착했다는 뜻이다.
+
+7. 서버가 준 응답 내용을 “글자 그대로” 앞에서 300글자만 잘라서 미리보기로 출력한다.
+   - 여기에는 실제 데이터(JSON)일 수도 있고,
+   - “인증키가 틀립니다” 같은 에러 안내 XML일 수도 있다.
+
+8. 응답 헤더에서 "Content-Type" 값을 꺼내서 출력한다.
+   - 이 값으로 “JSON인지, XML인지, 다른 형식인지” 대략 추측할 수 있다.
+
+9. 만약 Content-Type 이 "application/json" 으로 시작한다면:
+   9-1. “아, 이건 JSON 형식이구나” 라고 판단하고,
+        response.json() 을 사용해 JSON 문자열을 파이썬 dict 로 변환한다.
+   9-2. 변환된 data 의 타입이 dict 인지 출력해서 확인한다.
+   9-3. pprint 를 사용해 dict 전체 구조를 보기 좋게 출력한다.
+        (너무 깊이 들어가면 복잡하니까 depth=2 정도까지만 보여준다.)
+
+10. 만약 Content-Type 이 JSON 이 아니라면:
+    10-1. “JSON이 아님” 이라는 메시지를 출력한다.
+    10-2. “지금 응답은 XML이거나 에러 메시지일 수 있다”는 안내문을 보여준다.
+
+11. 이 코드의 목적:
+    - 요청이 되는지 확인하고
+    - 서버가 실제 JSON을 주는 상황과
+    - 인증키 에러 등으로 XML/에러 메시지가 오는 상황을  
+      눈으로 구분할 수 있도록 도와준다.
+```
+
+6번 로직이 추가된 이유:
+	응답이 JSON일 때만 안전하게 `.json()`을 쓰려고  
+	(XML·에러 메시지일 때 프로그램이 터지지 않게 하려고) 추가된 로직입니다.
+
+이 코드는 거의 예외 처리에 가까운 사고이며 예외가 나지 않도록 미리 막는 안전 장치(방어 코드)
+```python
+if Content-Type 이 JSON 이라면:
+      → json() 써도 안전함 → dict 로 변환
+else:
+      → json() 쓰지 말고
+      → "XML/에러입니다" 라고 안내
+
+# 의사코드      
+서버가 보내준 데이터가 진짜 JSON인지 먼저 확인하자.
+JSON이면 변환해서 쓰고,
+JSON이 아니면 (키 오류, XML 등) 깨지지 않게 안내만 하자.
 ```
 
 코드실행하기:
@@ -577,6 +727,7 @@ HTTP Status Code: 200
 ---
 
 ### 실습 코드:
+	이 코드는 “요청 → JSON인지 확인 → JSON이면 구조 안으로 쭉 들어가 보기”까지 들어간 버전
 
 `seoul_air_api.py`
 ```python
@@ -657,6 +808,100 @@ else:
     print("\n❌ JSON이 아님")
     print("👉 현재 응답은 XML 또는 에러 메시지입니다.")
     print("👉 인증키가 유효한지 확인한 뒤 다시 실행하세요.")
+```
+
+의사코드:
+```python
+1. 웹 서버에 HTTP 요청을 보내기 위한 requests 도구를 불러온다.
+2. 파이썬 딕셔너리나 리스트를 보기 좋게 출력하기 위한 pprint 도구를 불러온다.
+
+3. 서울시 미세먼지 API를 사용할 때 필요한 API_KEY 문자열을 변수에 저장한다.
+4. API 호출 주소(URL)를 규칙에 맞게 문자열로 만든다.
+   - 기본 주소 + API_KEY + 응답형식(json) + 서비스명(airQualityAPI) + 데이터 범위(1~5)를 합쳐서 완성된 URL 하나를 만든다.
+
+5. 완성된 URL로 서버에 GET 요청을 보낸다.
+   - 서버가 10초 안에 응답하지 않으면 timeout으로 요청을 중단한다.
+   - 서버가 돌려준 응답 전체를 response 변수에 저장한다.
+
+6. response 에서 HTTP 상태코드를 꺼내서 화면에 출력한다.
+   - (200이면: 서버가 요청을 잘 받고 응답했다는 뜻)
+
+7. response 에서 응답 본문(내용)을 text 형식으로 꺼낸다.
+   - 너무 길 수 있으니 앞에서 300글자만 잘라서 미리보기로 출력한다.
+
+8. response 의 헤더(headers) 중에서 "Content-Type" 값을 꺼낸다.
+   - 없으면 기본값으로 빈 문자열("")을 사용한다.
+   - 그 Content-Type 값을 화면에 출력한다.
+
+9. Content-Type 이 "application/json" 으로 시작하는지 확인한다.
+   - 소문자로 바꿔 비교해서, JSON 여부를 확인한 뒤 is_json 변수에 True/False 로 저장한다.
+
+10. 만약 is_json 이 True 라면 (응답이 JSON 형식이라면):
+
+    10-1. "JSON 형식이다 → 파이썬 dict 로 변환해 보겠다"는 안내 문구를 출력한다.
+
+    10-2. response.json() 을 호출해서
+          JSON 문자열을 파이썬 딕셔너리(dict) 로 변환하고,
+          그 결과를 data 변수에 저장한다.
+
+    10-3. data 의 타입(type(data))을 출력해서
+          진짜 dict 로 잘 변환되었는지 확인한다.
+
+    10-4. 이제부터는 JSON 구조 안으로 단계별로 들어가면서
+          어떤 키들이 있는지, 어디에 실제 데이터(row)가 있는지를 확인한다는 안내 문구를 출력한다.
+
+    10-5. data 딕셔너리의 최상위 키 목록(data.keys())을 출력한다.
+          - 여기 안에 "airQualityAPI"라는 키가 있는지 확인할 준비를 한다.
+
+    10-6. 만약 "airQualityAPI"라는 키가 data 안에 없다면:
+          - "airQualityAPI 키가 없다"는 안내를 출력한다.
+          - 응답 구조가 우리가 기대한 모양과 다르다는 문구를 출력한다.
+          - pprint.pprint() 를 사용해 data 전체(혹은 일부)를 보기 좋게 찍어서
+            실제로 어떤 구조로 왔는지 확인한다.
+          - 그리고 더 이상 안으로 들어가지 않는다.
+
+    10-7. 만약 "airQualityAPI" 키가 있다면:
+          - data["airQualityAPI"] 값을 꺼내서 air 변수에 저장한다.
+          - air 의 타입(type(air))을 출력한다. (보통 dict)
+          - air 딕셔너리 안에 있는 키 목록(air.keys())을 출력한다.
+
+    10-8. air 안에 "row"라는 키가 있는지 확인한다.
+          - 만약 "row" 키가 없다면:
+            - "row 키가 없다"는 안내를 출력한다.
+            - 데이터가 없거나 응답 구조가 달라졌다는 메시지를 출력한다.
+            - pprint.pprint(air, ...) 로 air 내용을 보기 좋게 출력한다.
+            - 그리고 더 이상 안으로 들어가지 않는다.
+
+    10-9. "row" 키가 있다면:
+          - air["row"] 값을 꺼내서 rows 변수에 저장한다.
+          - rows 의 타입(type(rows))을 출력한다. (보통 list)
+          - rows 리스트의 길이(len(rows))를 출력한다. (데이터 개수)
+
+    10-10. 만약 rows 리스트의 길이가 0이라면:
+           - "row 리스트가 비어 있다"는 경고 메시지를 출력한다.
+
+    10-11. rows 안에 하나 이상 데이터가 있다면:
+           - rows[0] (첫 번째 요소)를 꺼내서
+             "첫 번째 측정 데이터"라고 안내 문구를 출력한 뒤
+             pprint.pprint(rows[0])으로 딕셔너리 내용을 보기 좋게 출력한다.
+           - 이를 통해 실제 측정값이 어떤 키/값 구조로 들어있는지 확인할 수 있다.
+
+11. 만약 is_json 이 False 라면 (응답이 JSON이 아니라면):
+
+    11-1. "JSON이 아니다"라는 메시지를 출력한다.
+    11-2. 현재 응답이 XML 이거나 에러 안내 메시지일 수 있다는 설명을 출력한다.
+    11-3. 특히 서울시 공공데이터의 경우,
+          인증키가 틀리거나 없으면 XML 로 에러를 보내준다는 것을 알리고,
+          "인증키가 유효한지 확인하고 다시 실행하라"는 안내를 출력한다.
+
+12. 이 전체 코드는 결국 다음을 도와준다:
+    - 서버까지 요청이 가는지 (HTTP 상태코드로 확인)
+    - 응답이 JSON인지 XML/에러인지 (Content-Type과 일부 미리보기로 확인)
+    - JSON이면 파이썬 dict 로 변환
+    - 그 dict 안에서 실제 데이터(row)까지 단계적으로 찾아 들어가서
+      구조를 이해하고, 첫 번째 데이터 예시를 눈으로 확인
+    - JSON이 아니면 함부로 json()을 호출하지 않고,
+      프로그램이 에러 없이 안전하게 끝나도록 방어한다.
 ```
 
 실행 방법:
@@ -833,7 +1078,7 @@ df.columns.tolist()
 # =====================================================
 import requests
 import pprint  # 딕셔너리를 보기 좋게 출력하기 위한 도구
-import pandas as pd  # DataFrame 변환용
+import pandas as pd  # [추가] DataFrame 변환용 (1번째 코드에는 없던 부분)
 
 
 # =====================================================
@@ -844,6 +1089,7 @@ API_KEY = "여기에_본인_API_키_문자열_붙이기"
 # ❌ url 문자열에 < > 가 들어가 있으면 안 됨
 # ❌ f"<http://...>"  ← 잘못된 형식
 # ✅ 정상적인 f-string URL
+# [수정] 1번째 코드에서는 /1/5/ 까지만 조회했는데, 여기서는 /1/50/ 으로 50건 요청
 url = f"http://openapi.seoul.go.kr:8088/{API_KEY}/json/airQualityAPI/1/50/"
 
 
@@ -877,23 +1123,19 @@ print(content_type)
 is_json = content_type.lower().startswith("application/json")
 
 if is_json:
-    # ❌ if 다음 줄에 들여쓰기 없었음
-    # ✅ 반드시 들여쓰기 필요
     print("\n✅ JSON 형식 확인 → 파이썬 dict로 변환합니다.")
 
     data = response.json()  # JSON → dict
     print("\n🔍 타입 확인:", type(data))  # dict 확인
 
-
     # =================================================
     # ✅ 3단계: JSON 구조 안으로 하나씩 들어가기
+    #    (이 부분은 1번째 코드와 거의 동일한 흐름)
     # =================================================
     print("\n--- 🔍 3단계: JSON 구조 해석 시작 ---")
 
     print("\n1️⃣ 최상위 키:", data.keys())
 
-    # ❌ if"airQualityAPI"notin data:  (띄어쓰기 없음)
-    # ✅ 파이썬 문법상 반드시 띄어쓰기 필요
     if "airQualityAPI" not in data:
         print("\n❌ 'airQualityAPI' 키가 없습니다.")
         print("👉 응답 구조가 예상과 다릅니다.")
@@ -914,39 +1156,34 @@ if is_json:
             print("\n3️⃣ row 타입:", type(rows))  # list
             print("   row 길이:", len(rows))
 
-            # ❌ iflen(rows) ==0:  (띄어쓰기 없음)
-            # ✅ 정상 문법
             if len(rows) == 0:
                 print("\n⚠️ row 리스트가 비어 있습니다.")
             else:
                 print("\n4️⃣ 첫 번째 측정 데이터:")
                 pprint.pprint(rows[0], width=80)
 
-
             # =================================================
             # ✅ 4단계: pandas DataFrame으로 변환
+            #    [추가] 1번째 코드에는 없고, 2번째 코드에서 새로 들어간 부분
             # =================================================
             print("\n--- 📊 4단계: DataFrame 변환 시작 ---")
 
-            # ❌ df = pd.DataFrame(rows) 가 들여쓰기 틀어져 있었음
-            # ✅ rows가 존재하는 블록 안에서 실행
-            df = pd.DataFrame(rows)
+            df = pd.DataFrame(rows)  # [추가] rows 리스트 → DataFrame 변환
 
-            print("\n📊 DataFrame.head() 결과:")
+            print("\n📊 DataFrame.head() 결과:")  # [추가]
             print(df.head())
 
-            print("\n📌 컬럼 목록:")
+            print("\n📌 컬럼 목록:")  # [추가]
             print(df.columns.tolist())
 
-            print("\n📌 (선택) 자주 보는 컬럼만 출력 예시:")
+            print("\n📌 (선택) 자주 보는 컬럼만 출력 예시:")  # [추가]
 
-            wanted_cols = ["MSRSTE_NM", "PM10", "PM25"]
+            wanted_cols = ["MSRSTE_NM", "PM10", "PM25"]  # [추가] 보고 싶은 컬럼 후보
 
-            # ❌ [cfor cin wanted_colsif cin df.columns]
-            # ✅ 리스트 컴프리헨션 문법 수정
+            # [추가] 실제 응답에 존재하는 컬럼만 골라내기
             existing_cols = [c for c in wanted_cols if c in df.columns]
 
-            if existing_cols:
+            if existing_cols:  # [추가]
                 print(df[existing_cols].head())
             else:
                 print("⚠️ 예시 컬럼(MSRSTE_NM, PM10, PM25)이 현재 응답에 없습니다.")
@@ -960,6 +1197,113 @@ else:
     print("👉 현재 응답은 XML 또는 에러 메시지입니다.")
     print("👉 인증키가 유효한지 확인한 뒤 다시 실행하세요.")
 ```
+
+의사코드
+```python
+[0️⃣ 필요한 도구 불러오기]
+- HTTP 요청을 보내는 도구 불러오기
+- 깔끔하게 출력하는 도구 불러오기
+- 표(테이블) 형태로 다루는 도구(DataFrame) 불러오기
+
+[1️⃣ API 기본 설정]
+- "내 인증키 문자열"을 변수에 넣어 둔다
+- 서울시 공공데이터 API 주소를 만든다
+    - 형식: "http://openapi.seoul.go.kr:8088/인증키/json/airQualityAPI/1/50/"
+    - 1~50번까지의 미세먼지 데이터 요청하도록 설정
+
+[2️⃣ 서버에 요청 보내기]
+- 위에서 만든 URL로 GET 요청을 보낸다 (응답을 response에 저장)
+- 요청이 너무 오래 걸리면 에러 나도록 timeout=10초 설정
+
+[3️⃣ HTTP 상태 코드 확인]
+- 응답에서 status_code를 꺼내서 출력한다
+    - 200이면 정상, 400/500대는 문제 발생 가능
+
+[4️⃣ 응답 원문(텍스트) 잠깐 보기]
+- 응답 본문(response.text)에서 앞의 300글자만 잘라서 출력
+    - "지금 대충 뭐가 왔는지" 눈으로 확인용
+
+[5️⃣ 응답의 데이터 형식 확인]
+- 응답 헤더에서 "Content-Type" 값을 꺼낸다
+- 그 값을 출력해서 현재 응답이 JSON인지, XML인지, HTML인지 확인
+
+[6️⃣ JSON인지 여부 판단]
+- content_type을 소문자로 바꾼 뒤 "application/json"으로 시작하는지 체크
+- 만약 JSON이면:
+    - "JSON 형식입니다" 라고 출력
+    - response.json()으로 파이썬 dict로 변환해서 data 변수에 담기
+    - data의 타입이 dict인지 출력해서 확인
+
+    [6-1️⃣ JSON 구조 한 단계씩 내려가며 확인]
+    - data의 최상위 키 목록을 출력
+
+    - 최상위에 "airQualityAPI"라는 키가 있는지 검사
+      - 없으면:
+        - "'airQualityAPI' 키가 없습니다" 출력
+        - 전체 data 구조를 대략 출력하고 종료
+
+      - 있으면:
+        - air = data["airQualityAPI"] 로 꺼내기
+        - air가 어떤 타입(dict인지)을 출력
+        - air 안에 어떤 키들이 있는지 출력
+
+        - air 안에 "row"라는 키가 있는지 검사
+          - 없으면:
+            - "'row' 키가 없습니다" 출력
+            - air 내용을 대략 출력하고 종료
+
+          - 있으면:
+            - rows = air["row"] 라는 리스트로 저장
+            - rows의 타입과 길이(몇 개나 있는지) 출력
+
+            - 만약 rows 길이가 0이면:
+              - "row 리스트가 비어 있습니다" 출력
+
+            - 그렇지 않으면:
+              - "첫 번째 측정 데이터"라고 안내 문구 출력
+              - rows 리스트의 첫 번째 원소를 예쁘게 출력
+
+    [6-2️⃣ rows를 pandas DataFrame으로 변환]
+    - "DataFrame 변환 시작" 문구 출력
+    - df = DataFrame(rows) 로 변환
+    - df.head() 결과를 출력해서 앞부분 몇 줄만 확인
+    - df의 컬럼 이름 목록을 출력
+
+    [6-3️⃣ 자주 보는 컬럼만 골라서 출력]
+    - 보고 싶은 컬럼 이름 목록을 미리 만든다 (예: ["MSRSTE_NM", "PM10", "PM25"])
+    - 이 중에서 실제 df.columns에 존재하는 컬럼만 골라서 existing_cols에 담기
+    - 만약 existing_cols가 비어 있지 않으면:
+        - df[existing_cols].head() 로 해당 컬럼들만 앞부분 출력
+      그렇지 않으면:
+        - "예시 컬럼이 응답에 없습니다" 라고 안내하고
+        - 위에서 출력된 전체 컬럼 목록을 보고 직접 골라 쓰라고 안내
+
+[7️⃣ JSON이 아닐 때 처리]
+- 만약 처음에 JSON이 아니라고 판단되면:
+    - "JSON이 아님" 이라고 출력
+    - "현재 응답은 XML 또는 에러 메시지일 수 있다"고 안내
+    - "인증키가 유효한지, URL이 맞는지 다시 확인하라"고 안내
+```
+
+1. 그냥 출력용 코드 → “안전하게 구조 확인 + 분석” 코드로 업그레이드
+    - 무조건 `response.json()` 하는 게 아니라,  
+        먼저 `Content-Type`이 JSON인지 확인해서 에러를 예방해요.
+        
+2. JSON 구조를 한 단계씩 내려가면서 점검하도록 변경*
+    - `airQualityAPI` 키가 있는지, `row`가 있는지, 비어 있지는 않은지  
+        단계별로 확인해서 **“어디서 구조가 달라졌는지”** 쉽게 찾으려고 바꾼 거예요.
+        
+3. 단순 출력에서 → pandas DataFrame까지 확장
+    - `rows`를 바로 `DataFrame`으로 바꿔서  
+        `.head()`로 미리보기, 컬럼 목록 확인, 자주 보는 컬럼만 골라 보는 등  
+        **데이터 분석 준비 단계까지 한 번에 가도록** 만든 코드예요.
+        
+4. 나중에 재사용/확장하기 좋은 형태로 정리
+    - 이 구조를 그대로 두고,
+        - API만 바꾸거나
+        - 원하는 컬럼만 바꾸거나
+        - 필터링/저장 로직을 더 얹기 되게  
+            “뼈대 코드”처럼 쓰려고 이렇게 단계별로 정리된 버전입니다.
 
 실행
 ```bash
@@ -989,14 +1333,12 @@ application/xml;charset=UTF-8
 ❌ 이 출력은 “코드 실패”가 아닙니다
 현재 상태는:
 - HTTP 요청은 정상 (200)
-- 하지만 **응답 내용이 JSON이 아니라 XML**
-- 이유는 **인증키가 아직 유효하지 않기 때문**
+- 하지만 응답 내용이 JSON이 아니라 XML
+- 이유는 인증키가 아직 유효하지 않기 때문
 
 그래서:
-- `response.json()`을 **의도적으로 실행하지 않았고**
-- 프로그램은 **에러 없이 정상 종료됨**
-
-👉 이건 오히려 잘 만든 코드의 증거입니다
+- `response.json()`을 의도적으로 실행하지 않았고
+- 프로그램은 에러 없이 정상 종료됨
 
 ---
 ✅ 인증키가 정상일 경우, 달라지는 점
@@ -1161,6 +1503,7 @@ if is_json:
 
             # =================================================
             # ✅ 4단계: pandas DataFrame으로 변환
+            #    (이 부분까지는 이전 코드와 동일)
             # =================================================
             print("\n--- 📊 4단계: DataFrame 변환 시작 ---")
 
@@ -1186,34 +1529,37 @@ if is_json:
 
             # =================================================
             # ✅ 5단계: 간단한 필터링 (관제 느낌)
+            #    ⬇⬇⬇⬇⬇ [여기부터 전부 새로 추가된 부분] ⬇⬇⬇⬇⬇
             # =================================================
-            print("\n--- ⚠️ 5단계: 기준 이상 지역만 필터링 ---")
+            print("\n--- ⚠️ 5단계: 기준 이상 지역만 필터링 ---")  # [추가-5단계]
 
-            # ✅ [5단계-1] 기준(임계치) 설정: PM10이 이 값 이상이면 "나쁨 이상"이라고 가정
+            # [추가-5단계-1] 기준(임계치) 설정: PM10이 이 값 이상이면 "나쁨 이상"이라고 가정
             THRESHOLD_PM10 = 50
             print(f"\n✅ 필터 기준: PM10 >= {THRESHOLD_PM10}")
 
-            # ✅ [5단계-2] 필터링: 조건을 만족하는 행만 남김
-            # (df["PM10"] >= 50) 결과는 True/False의 목록이고,
-            # df[ ... ] 로 감싸면 True인 행만 남습니다.
+            # [추가-5단계-2] 필터링: 조건을 만족하는 행만 남김
+            # (df['PM10'] >= 50) → True/False 시리즈
+            # df[조건] → 조건이 True인 행만 남김
             if "PM10" in df.columns:
                 bad_air = df[df["PM10"] >= THRESHOLD_PM10]
 
-                # ✅ [5단계-3] 결과 출력: 관제에서는 핵심 컬럼만 뽑아 보여주는 게 일반적
+                # [추가-5단계-3] 결과 출력: 관제 모니터에 띄운다고 가정하고 핵심 컬럼만 출력
                 print("\n⚠️ 미세먼지 나쁨 이상 지역 목록:")
 
-                # 컬럼이 실제로 존재할 때만 안전하게 출력
+                # [추가-5단계-4] 실제 존재하는 컬럼만 사용 (안전장치)
                 cols_to_show = [c for c in ["MSRSTE_NM", "PM10"] if c in df.columns]
 
                 if len(bad_air) == 0:
                     print("✅ 기준 이상 지역이 없습니다. (모두 양호)")
                 elif cols_to_show:
+                    # to_string(index=False) → 인덱스 번호 없이 표 출력
                     print(bad_air[cols_to_show].to_string(index=False))
                 else:
-                    # 만약 컬럼명이 예상과 다르면 전체 컬럼 먼저 확인 유도
+                    # [추가-5단계-5] 컬럼명이 예상과 다를 때 안내
                     print("⚠️ 예상 컬럼(MSRSTE_NM, PM10)이 없습니다.")
                     print("👉 df.columns를 확인해서 실제 컬럼명으로 수정하세요.")
             else:
+                # [추가-5단계-6] 아예 PM10 컬럼이 없을 때
                 print("\n❌ 'PM10' 컬럼이 없습니다.")
                 print("👉 df.columns에서 실제 미세먼지 컬럼명을 확인해 주세요.")
 
@@ -1224,6 +1570,154 @@ else:
     print("\n❌ JSON이 아님")
     print("👉 현재 응답은 XML 또는 에러 메시지입니다.")
     print("👉 인증키가 유효한지 확인한 뒤 다시 실행하세요.")
+```
+
+의사코드
+```python
+[0️⃣ 필요한 도구 불러오기]
+- HTTP 요청을 보내는 도구(요청 라이브러리)를 준비한다.
+- 딕셔너리/리스트를 예쁘게 출력하는 도구를 준비한다.
+- 표(테이블) 형태로 데이터를 다루는 도구(pandas)를 준비한다.
+
+
+[1️⃣ API 기본 설정]
+- 내 공공데이터 인증키 문자열을 변수에 저장한다. (API_KEY)
+- 서울시 대기질 정보를 요청할 API URL 문자열을 만든다.
+    - 형식: "http://openapi.seoul.go.kr:8088/인증키/json/airQualityAPI/1/50/"
+    - → 1번부터 50번까지의 측정값을 JSON 형식으로 달라고 요청하는 주소
+
+
+[2️⃣ 서버에 요청 보내기]
+- 위에서 만든 URL로 GET 요청을 보낸다.
+- 요청 결과(응답 객체)를 response 변수에 담는다.
+- 너무 오래 걸리지 않도록 timeout은 10초로 설정한다.
+
+
+[3️⃣ HTTP 상태 코드 확인]
+- response에서 HTTP 상태 코드(status_code)를 꺼낸다.
+- "HTTP Status Code: ..." 형태로 화면에 출력한다.
+    - 200인 경우: 정상 응답 가능성이 높음
+    - 그 외 코드: 에러 또는 이상 응답일 수 있음
+
+
+[4️⃣ 응답 원문(텍스트) 미리보기]
+- response의 본문(text)에서 앞의 300글자만 잘라서 출력한다.
+- → "지금 어떤 내용이 대충 왔는지" 사람이 눈으로 확인하는 용도
+
+
+[5️⃣ 응답의 데이터 형식(Content-Type) 확인]
+- response의 헤더에서 "Content-Type" 값을 꺼낸다.
+- 그 값을 출력한다.
+    - 예: "application/json; charset=utf-8"
+- 이 값을 보고 JSON인지, XML인지, HTML인지 알 수 있다.
+
+
+[6️⃣ JSON인지 여부 판단하는 안전장치]
+- content_type을 소문자로 바꾼 후 "application/json"으로 시작하는지 확인한다.
+- 만약 JSON이라면 is_json = True, 아니면 False라고 본다.
+
+- 만약 is_json == True (JSON일 때)라면:
+    - "JSON 형식입니다"라는 안내를 출력한다.
+    - response.json()을 호출해서 JSON 문자열을 파이썬 dict 구조로 변환한다.
+    - 변환된 객체를 data 변수에 담는다.
+    - data의 타입이 dict인지 출력해본다.
+
+
+    [6-1️⃣ JSON 구조를 단계별로 내려가며 확인]
+    - data의 최상위 키 목록을 출력한다.
+
+    - 최상위에 "airQualityAPI"라는 키가 있는지 확인한다.
+        - 만약 없다면:
+            - "'airQualityAPI' 키가 없습니다"라고 출력한다.
+            - 응답 구조가 예상과 다르다고 안내한다.
+            - pprint로 data 전체 구조를 대략 출력해 보고 여기서 JSON 해석을 멈춘다.
+
+        - 만약 있다면:
+            - air = data["airQualityAPI"]로 해당 부분을 꺼낸다.
+            - air의 타입(보통 dict)을 출력한다.
+            - air 안에 있는 키 목록을 출력한다.
+
+            - air 안에 "row"라는 키가 있는지 확인한다.
+                - 없으면:
+                    - "'row' 키가 없습니다"라고 출력한다.
+                    - "데이터가 없거나 응답 구조가 변경된 것"이라고 안내한다.
+                    - air 내용을 대략 출력하고 여기서 JSON 해석을 멈춘다.
+
+                - 있으면:
+                    - rows = air["row"] 로 데이터를 꺼낸다.
+                    - rows의 타입(보통 리스트)을 출력한다.
+                    - rows의 길이(데이터 개수)를 출력한다.
+
+                    - 만약 rows의 길이가 0이면:
+                        - "row 리스트가 비어 있습니다"라고 출력한다.
+                        - 더 이상 처리할 데이터가 없으므로 여기까지.
+
+                    - 그렇지 않으면(데이터가 1개 이상이면):
+                        - "첫 번째 측정 데이터:"라고 안내 문구를 출력한다.
+                        - rows 리스트의 첫 번째 원소를 예쁘게 출력해서 구조를 눈으로 확인한다.
+
+
+    [6-2️⃣ DataFrame으로 변환하는 단계]
+    - "DataFrame 변환 시작"이라는 문구를 출력한다.
+    - rows 리스트를 표 구조로 변환한다.
+        - df = DataFrame(rows)
+        - 이렇게 하면 각 dict의 키가 컬럼 이름이 된다.
+
+    - df.head() 결과(앞에서 몇 행)를 출력해서 데이터 모양을 확인한다.
+    - df.columns를 출력해서 컬럼 이름 목록을 확인한다.
+
+    - "자주 보는 컬럼만 출력하는 예시"를 보여준다.
+        - 보고 싶은 컬럼 이름 후보 리스트를 만든다.
+            - 예: wanted_cols = ["MSRSTE_NM", "PM10", "PM25"]
+        - 이 중에서 실제로 df에 존재하는 컬럼만 골라서 existing_cols에 넣는다.
+            - existing_cols = [c for c in wanted_cols if c in df.columns]
+        - 만약 existing_cols가 비어 있지 않다면:
+            - df[existing_cols].head()를 출력해서 해당 컬럼들만 앞부분을 보여준다.
+        - 만약 비어 있다면:
+            - "예시 컬럼이 현재 응답에 없습니다"라고 안내하고,
+            - 컬럼 목록을 보고 실제 이름을 확인하라고 안내한다.
+
+
+    [6-3️⃣ 간단한 관제용 필터링 로직 추가]
+    - "기준 이상 지역만 필터링"이라는 제목을 출력한다.
+
+    - 1) 기준(임계치) 설정
+        - PM10이 일정 값 이상이면 "나쁨 이상"이라고 가정한다.
+        - 예: THRESHOLD_PM10 = 50
+        - "필터 기준: PM10 >= 50"이라는 안내 문구를 출력한다.
+
+    - 2) 필터링 수행
+        - 우선 df에 "PM10" 컬럼이 있는지 확인한다.
+            - 없다면:
+                - "'PM10' 컬럼이 없습니다"라고 출력한다.
+                - df.columns에 어떤 컬럼이 있는지 보고 미세먼지 관련 컬럼명을 찾으라고 안내한다.
+            - 있다면:
+                - 조건식 (df["PM10"] >= THRESHOLD_PM10)을 만든다.
+                - 이 조건을 이용해서 bad_air = df[df["PM10"] >= THRESHOLD_PM10] 으로 필터링한다.
+                - bad_air에는 기준 이상(나쁨 이상)의 지역만 남는다.
+
+    - 3) 필터링된 결과 출력
+        - "미세먼지 나쁨 이상 지역 목록:" 문구를 출력한다.
+        - 기본으로 보여주고 싶은 컬럼 목록을 정한다. (예: ["MSRSTE_NM", "PM10"])
+        - 이 중 실제로 존재하는 컬럼만 골라서 cols_to_show에 넣는다.
+
+        - 만약 bad_air의 행 개수가 0이면:
+            - "기준 이상 지역이 없습니다. (모두 양호)"라고 출력한다.
+
+        - 만약 행이 있고, cols_to_show도 비어 있지 않다면:
+            - bad_air[cols_to_show]만 골라서 표 형태로 출력한다.
+            - 인덱스 번호는 표시하지 않고(관제 화면이라고 가정) 깔끔한 표만 보여준다.
+
+        - 만약 cols_to_show가 비어 있다면:
+            - "예상했던 컬럼명이 없습니다"라고 안내하고,
+            - df.columns를 확인해서 실제 컬럼명으로 수정하라고 안내한다.
+
+
+[7️⃣ JSON이 아닐 때 처리]
+- 만약 처음에 Content-Type이 JSON이 아니라면 (is_json == False):
+    - "JSON이 아님"이라고 출력한다.
+    - "현재 응답은 XML 또는 에러 메시지일 수 있습니다"라고 안내한다.
+    - "인증키가 올바른지, URL이 맞는지 다시 확인해 보세요"라고 안내한다.
 ```
 
 실행 방법
@@ -1329,41 +1823,61 @@ app.py
 ```python
 import requests
 import pandas as pd
-import streamlit as st
+import streamlit as st   # [추가] 웹 대시보드 출력용
+
 
 # ==============================
 # 0) Streamlit 기본 설정
 # ==============================
-st.set_page_config(page_title="서울 미세먼지 관제 대시보드", page_icon="🌫️", layout="wide")
-st.title("🌫️ 서울 미세먼지 관제 대시보드 (API → DataFrame → 필터링)")
-st.write("API로 데이터를 가져와서 **기준값(임계치)** 으로 위험 지역만 걸러서 보여주는 관제 화면입니다.")
+st.set_page_config(        # [추가]
+    page_title="서울 미세먼지 관제 대시보드",
+    page_icon="🌫️",
+    layout="wide"
+)
+
+st.title("🌫️ 서울 미세먼지 관제 대시보드 (API → DataFrame → 필터링)")   # [추가]
+st.write("API로 데이터를 가져와서 **기준값(임계치)** 으로 위험 지역만 걸러서 보여주는 관제 화면입니다.")   # [추가]
+
 
 # ==============================
 # 1) 사이드바: 입력(설정값)
 # ==============================
-st.sidebar.header("⚙️ 설정")
+st.sidebar.header("⚙️ 설정")   # [추가]
 
-API_KEY = st.sidebar.text_input("서울 OpenAPI KEY", value="여기에_본인_API_키_문자열_붙이기")
-limit = st.sidebar.selectbox("가져올 데이터 개수", [5, 10, 20, 50], index=3)
+API_KEY = st.sidebar.text_input(         # [수정] → 하드코드 → 사용자 입력
+    "서울 OpenAPI KEY",
+    value="여기에_본인_API_키_문자열_붙이기"
+)
 
-threshold_pm10 = st.sidebar.slider("PM10 임계치 (나쁨 기준)", min_value=0, max_value=200, value=50, step=5)
-only_bad = st.sidebar.checkbox("나쁨 이상만 보기", value=True)
+limit = st.sidebar.selectbox(           # [추가]
+    "가져올 데이터 개수", 
+    [5, 10, 20, 50], 
+    index=3
+)
 
-refresh = st.sidebar.button("🔄 새로고침(재요청)")
+threshold_pm10 = st.sidebar.slider(     # [수정] → 코드 값 → 슬라이더 UI
+    "PM10 임계치 (나쁨 기준)",
+    min_value=0, max_value=200, value=50, step=5
+)
+
+only_bad = st.sidebar.checkbox("나쁨 이상만 보기", value=True)   # [추가]
+
+refresh = st.sidebar.button("🔄 새로고침(재요청)")                # [추가]
+
 
 # ==============================
 # 2) API 호출 함수
 # ==============================
-@st.cache_data(ttl=60)  # 60초 동안 캐시
+@st.cache_data(ttl=60)        # [추가] → 60초 동안 캐싱
 def fetch_air_data(api_key: str, limit: int):
-    url = f"http://openapi.seoul.go.kr:8088/{api_key}/json/airQualityAPI/1/{limit}/"
+    url = f"http://openapi.seoul.go.kr:8088/{api_key}/json/airQualityAPI/1/{limit}/"   # [수정] limit 적용
     response = requests.get(url, timeout=10)
 
     content_type = response.headers.get("Content-Type", "")
     is_json = content_type.lower().startswith("application/json")
 
     # JSON이 아니면(XML/에러 메시지)
-    if not is_json:
+    if not is_json:          # [수정] → 예외 반환 형식 (df, err)
         return None, response.text[:500]
 
     data = response.json()
@@ -1377,42 +1891,44 @@ def fetch_air_data(api_key: str, limit: int):
     rows = data["airQualityAPI"]["row"]
     df = pd.DataFrame(rows)
 
-    return df, None
+    return df, None          # [수정] → DataFrame + 에러 메시지 반환
 
 
 # ==============================
 # 3) 데이터 가져오기
 # ==============================
-# 새로고침 버튼을 누르면 캐시 무시하고 다시 불러오게 처리
-if refresh:
+if refresh:            # [추가] → 버튼으로 캐시 초기화
     fetch_air_data.clear()
 
-df, err = fetch_air_data(API_KEY, limit)
+df, err = fetch_air_data(API_KEY, limit)   # [수정] → 함수 호출 구조 변경
 
-if df is None:
+if df is None:         # [수정] → Streamlit식 오류 처리
     st.error("❌ DataFrame 생성에 실패했습니다. (df가 None)")
     if err:
         st.code(err)
     st.stop()
 
+
 # ==============================
 # 4) 에러 처리
 # ==============================
-if err is not None:
+if err is not None:    # [수정]
     st.error("❌ 데이터를 가져오지 못했습니다.")
     st.write("아래 메시지를 확인하세요 (대부분 인증키 문제로 XML이 내려옵니다).")
     st.code(err)
     st.stop()
 
+
 # ==============================
 # 5) 컬럼 확인 및 타입 정리
 # ==============================
-# 혹시 숫자가 문자열로 오면 비교가 안 되므로 숫자 변환
+# [추가] 숫자 비교를 위한 형변환
 if "PM10" in df.columns:
     df["PM10"] = pd.to_numeric(df["PM10"], errors="coerce")
 
 if "PM25" in df.columns:
     df["PM25"] = pd.to_numeric(df["PM25"], errors="coerce")
+
 
 # ==============================
 # 6) 필터링(관제 핵심)
@@ -1422,34 +1938,36 @@ if "PM10" not in df.columns:
     st.write(df.columns.tolist())
     st.stop()
 
-bad_df = df[df["PM10"] >= threshold_pm10].copy()
+bad_df = df[df["PM10"] >= threshold_pm10].copy()    # [수정] → 슬라이더 기준 적용
+
 
 # ==============================
 # 7) 화면 출력(관제 마무리)
 # ==============================
-col1, col2 = st.columns([2, 1])
+col1, col2 = st.columns([2, 1])   # [추가] 레이아웃 분리
 
 with col1:
     st.subheader("📋 전체 데이터")
     st.caption("API에서 받은 원본 데이터(DataFrame)입니다.")
-    st.dataframe(df, use_container_width=True)
+    st.dataframe(df, use_container_width=True)      # [수정] → print → 테이블 UI
 
 with col2:
     st.subheader("🚨 위험 요약")
-    st.metric("총 데이터 수", len(df))
+    st.metric("총 데이터 수", len(df))             # [추가]
     st.metric(f"PM10 ≥ {threshold_pm10} 지역 수", len(bad_df))
 
     st.subheader("📌 컬럼 확인")
     st.write(df.columns.tolist())
 
-st.divider()
+st.divider()   # [추가]
+
 
 st.subheader("⚠️ 나쁨 이상(필터링 결과)")
 st.caption("관제 화면은 보통 **기준 이상 데이터만** 보여줍니다.")
 
 show_cols = [c for c in ["MSRSTE_NM", "PM10", "PM25", "MSRDATE"] if c in df.columns]
 
-if only_bad:
+if only_bad:                                   # [수정] 체크박스 조건 추가
     if len(bad_df) == 0:
         st.success("✅ 기준 이상 지역이 없습니다. (모두 양호)")
     else:
@@ -1459,16 +1977,206 @@ else:
 
 st.divider()
 
-st.subheader("📈 간단 차트: PM10 상위 지역 TOP 10")
+
+# ==============================
+# 8) 차트 추가
+# ==============================
+st.subheader("📈 간단 차트: PM10 상위 지역 TOP 10")   # [추가]
+
 if len(df) > 0:
-    top = df.sort_values("PM10", ascending=False).head(10)
+    top = df.sort_values("PM10", ascending=False).head(10)   # [추가]
     chart_cols = [c for c in ["MSRSTE_NM", "PM10"] if c in top.columns]
 
     if chart_cols == ["MSRSTE_NM", "PM10"]:
         top_chart = top.set_index("MSRSTE_NM")["PM10"]
-        st.bar_chart(top_chart)
+        st.bar_chart(top_chart)       # [추가]
     else:
         st.write("차트에 필요한 컬럼이 부족합니다. (MSRSTE_NM, PM10)")
+```
+
+의사코드:
+```python
+[0) 필요한 라이브러리 불러오기]
+- HTTP 요청을 보내기 위한 라이브러리 불러오기 (requests)
+- 표(테이블) 데이터를 다루기 위한 라이브러리 불러오기 (pandas)
+- 웹 대시보드 UI를 만들기 위한 라이브러리 불러오기 (streamlit)
+
+
+[0) Streamlit 기본 설정]
+- 페이지 제목을 "서울 미세먼지 관제 대시보드"로 설정한다.
+- 상단에 표시될 아이콘(이모지)을 🌫️ 로 설정한다.
+- 레이아웃은 가로로 넓게(wide) 쓰도록 설정한다.
+
+- 화면 맨 위에 대시보드 제목을 쓴다.
+  - "서울 미세먼지 관제 대시보드 (API → DataFrame → 필터링)"
+- 아래에 한 줄 설명을 적는다.
+  - "API로 데이터를 가져와서 기준값(임계치)으로 위험 지역만 걸러서 보여주는 관제 화면입니다."
+
+
+[1) 사이드바: 사용자 입력(설정값)]
+- 화면 왼쪽 사이드바에 "⚙️ 설정" 이라는 섹션 제목을 표시한다.
+
+- 사이드바에 서울 OpenAPI KEY를 입력하는 텍스트 박스를 만든다.
+  - 기본값은 "여기에_본인_API_키_문자열_붙이기" 로 채워둔다.
+  - 사용자가 여기 내용을 자기 키로 바꿀 수 있다.
+
+- 사이드바에 "가져올 데이터 개수" 선택 박스를 만든다.
+  - 선택지는 [5, 10, 20, 50]
+  - 기본 선택은 50개(index=3)
+
+- 사이드바에 슬라이더를 하나 만든다.
+  - 레이블: "PM10 임계치 (나쁨 기준)"
+  - 최소값: 0
+  - 최대값: 200
+  - 기본값: 50
+  - 증가 단위: 5
+  → 이 값이 "나쁨 기준"으로 사용된다.
+
+- 사이드바에 체크박스를 하나 만든다.
+  - 레이블: "나쁨 이상만 보기"
+  - 기본값: True
+  → 체크되어 있으면 "나쁨 이상 데이터만" 보여주는 모드.
+
+- 사이드바에 "🔄 새로고침(재요청)" 버튼을 하나 만든다.
+  → 사용자가 누르면 API를 다시 호출하게 만들 예정이다.
+
+
+[2) API 호출 함수 정의]
+- fetch_air_data(api_key, limit) 라는 함수를 만든다.
+- 이 함수는 Streamlit의 캐시 기능을 사용한다.
+  - 같은 입력(api_key, limit)으로 60초 이내에 다시 호출되면
+    → 이전 결과를 재사용하여 API를 매번 다시 부르지 않는다.
+
+- 함수 안에서 하는 일:
+
+  1. 서울시 대기질 API URL을 만든다.
+     - 형식: "http://openapi.seoul.go.kr:8088/{api_key}/json/airQualityAPI/1/{limit}/"
+     - limit만큼의 데이터를 JSON으로 요청한다.
+
+  2. 이 URL로 GET 요청을 보낸다. (timeout은 10초)
+
+  3. 응답의 Content-Type 값을 확인한다.
+     - 소문자로 바꾼 후 "application/json" 으로 시작하는지 체크한다.
+     - JSON이 아니면:
+       - (예: 인증 실패로 XML/HTML이 왔을 때)
+       - (df=None, 에러 메시지 텍스트 일부) 를 반환하고 함수 종료.
+
+  4. JSON이면:
+     - response.json() 으로 파이썬 dict로 변환해서 data 변수에 담는다.
+
+  5. data 안에 "airQualityAPI"라는 키가 있는지 확인한다.
+     - 없으면:
+       - (df=None, "응답에 airQualityAPI 키가 없습니다.") 를 반환하고 종료.
+
+  6. data["airQualityAPI"] 안에 "row"라는 키가 있는지 확인한다.
+     - 없으면:
+       - (df=None, "응답에 row 데이터가 없습니다.") 를 반환하고 종료.
+
+  7. rows = data["airQualityAPI"]["row"]로 리스트 데이터를 꺼낸다.
+
+  8. rows를 pandas DataFrame으로 변환한다. (df = DataFrame(rows))
+
+  9. (df, 에러 없음)를 반환한다.
+     - 즉, (df, None) 반환.
+
+
+[3) 데이터 가져오기 로직]
+- 만약 사용자가 사이드바의 "새로고침" 버튼을 눌렀다면:
+  - fetch_air_data의 캐시를 지운다. (clear)
+  - 다음 호출부터는 API를 다시 호출하게 된다.
+
+- fetch_air_data(API_KEY, limit)를 호출하여
+  - df(데이터프레임), err(에러메시지)를 받아온다.
+
+- 만약 df가 None이라면:
+  - "DataFrame 생성에 실패했습니다"라는 에러 메시지를 화면에 띄운다.
+  - err 내용이 있으면 코드 블록 형태로 보여준다.
+  - 더 이상 진행하지 않고 앱 실행을 중단한다(st.stop).
+
+
+[4) 에러 메시지 처리]
+- df는 만들어졌지만 err가 None이 아닌 경우:
+  - "데이터를 가져오지 못했습니다"라는 에러 메시지를 띄운다.
+  - 대부분 인증키 문제로 XML이 내려온다고 설명을 써준다.
+  - err 내용을 코드 블록으로 보여준다.
+  - 더 이상 진행하지 않고 앱 실행을 중단한다.
+
+
+[5) 컬럼 확인 및 타입 정리]
+- df에 "PM10" 컬럼이 있다면:
+  - df["PM10"]을 숫자형으로 변환한다.
+    - 숫자가 아닌 값은 NaN으로 처리한다(errors="coerce").
+
+- df에 "PM25" 컬럼이 있다면:
+  - df["PM25"]도 같은 방식으로 숫자형으로 변환한다.
+
+→ 이렇게 하는 이유:
+- API 응답이 문자열 형태의 숫자일 수 있어서
+- 임계치 비교(>=)가 제대로 되도록 타입을 맞춰주는 단계.
+
+
+[6) 필터링 (관제 핵심 로직)]
+- df에 "PM10" 컬럼이 없으면:
+  - "PM10 컬럼이 없습니다"라는 경고 메시지를 띄운다.
+  - df.columns 목록을 화면에 보여준다.
+  - 더 이상 진행하지 않고 앱 실행을 멈춘다.
+
+- "PM10" 컬럼이 있다면:
+  - bad_df 라는 DataFrame을 만든다.
+  - 조건: df["PM10"] 값이 threshold_pm10 (슬라이더에서 정한 임계치) 이상인 행만 추린다.
+  - 이렇게 필터링한 결과를 bad_df에 복사(copy)해 둔다.
+  → bad_df = "나쁨 이상 지역 목록" 이라고 보면 된다.
+
+
+[7) 화면 출력 (관제 마무리)]
+- 화면을 두 개의 컬럼으로 나눈다. (왼쪽: 오른쪽 = 2:1 비율)
+
+- 왼쪽 컬럼(col1)에는:
+  - "📋 전체 데이터"라는 부제목을 보여준다.
+  - "API에서 받은 원본 DataFrame입니다"라는 설명을 표시한다.
+  - df 전체를 표 형태로 보여준다(st.dataframe).
+
+- 오른쪽 컬럼(col2)에는:
+  - "🚨 위험 요약" 이라는 부제목을 쓴다.
+  - st.metric으로 요약 숫자를 보여준다:
+    - 총 데이터 수: len(df)
+    - PM10 ≥ threshold_pm10 지역 수: len(bad_df)
+  - "📌 컬럼 확인" 부제목 밑에 df.columns 목록을 보여준다.
+
+- 구분선(st.divider)을 그어준다.
+
+- "⚠️ 나쁨 이상(필터링 결과)"라는 부제목을 다시 쓴다.
+- "관제 화면은 보통 기준 이상 데이터만 보여줍니다" 라는 캡션을 단다.
+
+- show_cols라는 리스트를 만든다.
+  - ["MSRSTE_NM", "PM10", "PM25", "MSRDATE"] 중
+  - 실제로 df에 존재하는 컬럼만 골라서 넣는다.
+
+- 만약 사이드바에서 "나쁨 이상만 보기" 체크박스가 체크된 상태라면 (only_bad=True):
+  - bad_df에 행이 0개면:
+    - "기준 이상 지역이 없습니다. (모두 양호)"라는 성공 메시지를 띄운다.
+  - bad_df에 데이터가 있으면:
+    - bad_df에서 show_cols만 골라서 표로 보여준다.
+
+- 만약 only_bad가 False라면:
+  - "체크 해제 상태: 전체 데이터가 이미 위에 표시되어 있습니다."라는 안내 메시지를 띄운다.
+
+- 다시 한 번 구분선(st.divider)를 넣는다.
+
+
+[8) 차트 출력]
+- "📈 간단 차트: PM10 상위 지역 TOP 10"이라는 부제목을 쓴다.
+
+- df에 행이 1개 이상 있으면:
+  - PM10 값을 기준으로 내림차순 정렬한다.
+  - 상위 10개의 행만 뽑아서 top이라는 DataFrame을 만든다.
+
+  - ["MSRSTE_NM", "PM10"] 컬럼이 top에 모두 있는지 확인한다.
+    - 둘 다 있으면:
+      - top의 "MSRSTE_NM"을 인덱스로 쓰고, "PM10" 값을 시리즈로 만든다.
+      - 이 시리즈를 막대그래프(bar chart)로 그린다.
+    - 필요한 컬럼이 없으면:
+      - "차트에 필요한 컬럼이 부족합니다. (MSRSTE_NM, PM10)"이라는 안내 문구를 대신 보여준다.
 ```
 
 실행
@@ -1609,8 +2317,8 @@ st.set_page_config(
     layout="wide"
 )
 
-st.title("🌫️ 서울 미세먼지 관제 대시보드 (API / CSV → DataFrame → 필터링)")
-st.write("데이터를 가져와서 기준값(임계치)으로 위험 지역만 걸러서 보여주는 관제 화면입니다.")
+st.title("🌫️ 서울 미세먼지 관제 대시보드 (API / CSV → DataFrame → 필터링)")  # [수정] 제목에 CSV 지원 문구 추가
+st.write("데이터를 가져와서 기준값(임계치)으로 위험 지역만 걸러서 보여주는 관제 화면입니다.")  # [유지]
 
 
 # =====================================================
@@ -1618,38 +2326,38 @@ st.write("데이터를 가져와서 기준값(임계치)으로 위험 지역만 
 # =====================================================
 st.sidebar.header("⚙️ 설정")
 
-data_source = st.sidebar.radio(
+data_source = st.sidebar.radio(  # [추가] 데이터 소스 선택 기능(API/CSV)
     "데이터 소스 선택",
     ["API(실시간)", "CSV 업로드(브라우저)", "로컬 CSV(dust_sample.csv)"],
     index=0
 )
 
-api_key = st.sidebar.text_input(
+api_key = st.sidebar.text_input(  # [수정] API 전용이 아니라, 모드에 따라 사용
     "서울 OpenAPI KEY (API 모드에서만 필요)",
     value="",
     placeholder="여기에 본인 API KEY 입력"
 )
 
-limit = st.sidebar.selectbox("가져올 데이터 개수(API 모드)", [5, 10, 20, 50], index=3)
+limit = st.sidebar.selectbox("가져올 데이터 개수(API 모드)", [5, 10, 20, 50], index=3)  # [유지]
 
-threshold_pm10 = st.sidebar.slider(
+threshold_pm10 = st.sidebar.slider(  # [유지]
     "PM10 임계치 (나쁨 기준)",
     min_value=0,
-    max_value=150,
+    max_value=150,  # [수정] 최대값 200 → 150으로 조정
     value=50,
     step=5
 )
 
-only_bad = st.sidebar.checkbox("나쁨 이상만 보기", value=True)
+only_bad = st.sidebar.checkbox("나쁨 이상만 보기", value=True)  # [유지]
 
-st.sidebar.divider()
+st.sidebar.divider()  # [추가] 사이드바 구분선
 
 # CSV 업로드는 해당 모드에서만
 uploaded_file = None
-if data_source == "CSV 업로드(브라우저)":
+if data_source == "CSV 업로드(브라우저)":  # [추가]
     uploaded_file = st.sidebar.file_uploader("CSV 파일 업로드", type=["csv"])
 
-refresh = st.sidebar.button("🔄 새로고침(재요청)")
+refresh = st.sidebar.button("🔄 새로고침(재요청)")  # [유지]
 
 
 # =====================================================
@@ -1659,18 +2367,18 @@ refresh = st.sidebar.button("🔄 새로고침(재요청)")
 # ✅ [권장] API 요청도 캐시하면 실무/수업에서 과도한 호출 방지에 좋음
 @st.cache_data(ttl=60)
 def load_from_api(api_key: str, limit: int) -> tuple[pd.DataFrame | None, str | None]:
-    if not api_key.strip():
+    if not api_key.strip():  # [추가] API KEY 빈 문자열 방어
         return None, "API KEY가 비어 있습니다. 왼쪽 사이드바에 KEY를 입력하세요."
 
     url = f"http://openapi.seoul.go.kr:8088/{api_key}/json/airQualityAPI/1/{limit}/"
 
-    try:
+    try:  # [추가] 네트워크 예외 처리
         response = requests.get(url, timeout=10)
     except Exception as e:
         return None, f"요청 실패(네트워크/timeout 가능): {e}"
 
     # ✅ [권장] HTTP 코드가 200이 아닐 때는 바로 안내
-    if response.status_code != 200:
+    if response.status_code != 200:  # [추가] 상태 코드 체크
         return None, (
             f"HTTP 요청 실패 (status={response.status_code})\n\n"
             f"응답 미리보기:\n{response.text[:500]}"
@@ -1689,20 +2397,21 @@ def load_from_api(api_key: str, limit: int) -> tuple[pd.DataFrame | None, str | 
             f"응답 미리보기:\n{preview}"
         )
 
-    try:
+    try:  # [추가] JSON 파싱 예외 처리
         data = response.json()
     except Exception as e:
         return None, f"JSON 파싱 실패: {e}"
 
-    if "airQualityAPI" not in data or "row" not in data["airQualityAPI"]:
+    if "airQualityAPI" not in data or "row" not in data["airQualityAPI"]:  # [수정] 키 검사 통합
         return None, f"응답 구조가 예상과 다릅니다.\n\n키 목록: {list(data.keys())}"
 
     rows = data["airQualityAPI"]["row"]
     df = pd.DataFrame(rows)
-    return df, None
+    return df, None  # [유지]
 
 
 def load_from_uploaded_csv(uploaded_file) -> tuple[pd.DataFrame | None, str | None]:
+    """[추가] 브라우저에서 업로드한 CSV를 읽는 함수"""
     if uploaded_file is None:
         return None, "CSV 파일이 업로드되지 않았습니다. 왼쪽에서 파일을 선택하세요."
 
@@ -1714,6 +2423,7 @@ def load_from_uploaded_csv(uploaded_file) -> tuple[pd.DataFrame | None, str | No
 
 
 def load_from_local_csv(path: str = "dust_sample.csv") -> tuple[pd.DataFrame | None, str | None]:
+    """[추가] app.py와 같은 폴더에 있는 로컬 CSV를 읽는 함수"""
     try:
         df = pd.read_csv(path)
         return df, None
@@ -1732,9 +2442,10 @@ def load_from_local_csv(path: str = "dust_sample.csv") -> tuple[pd.DataFrame | N
 st.subheader("✅ 1) 데이터 로딩 결과")
 
 # ✅ [권장] 새로고침 버튼 누르면 캐시 클리어
-if refresh:
-    load_from_api.clear()
+if refresh:  # [유지]
+    load_from_api.clear()  # [수정] 이전 fetch_air_data.clear() → load_from_api.clear()
 
+# [수정] 데이터 소스 종류에 따라 분기 처리
 if data_source == "API(실시간)":
     df, err = load_from_api(api_key, limit)
 elif data_source == "CSV 업로드(브라우저)":
@@ -1743,18 +2454,18 @@ else:
     # 로컬 CSV
     df, err = load_from_local_csv("dust_sample.csv")
 
-if err is not None:
+if err is not None:  # [유지] 에러 메시지 처리
     st.error("❌ 데이터를 가져오지 못했습니다.")
-    st.write("아래 메시지를 확인하세요 (실무 관제에서도 이런 안내가 매우 중요합니다).")
+    st.write("아래 메시지를 확인하세요 (실무 관제에서도 이런 안내가 매우 중요합니다).")  # [수정] 안내 문구 강화
     st.code(err)
     st.stop()
 
 # ✅ [권장] df가 None인 케이스 방어(예외적 상황 대비)
-if df is None:
+if df is None:  # [추가] 방어 코드
     st.error("❌ DataFrame 생성 실패(df=None).")
     st.stop()
 
-st.success("✅ 데이터 로딩 성공 (DataFrame 생성 완료)")
+st.success("✅ 데이터 로딩 성공 (DataFrame 생성 완료)")  # [유지]
 
 
 # =====================================================
@@ -1762,7 +2473,7 @@ st.success("✅ 데이터 로딩 성공 (DataFrame 생성 완료)")
 # =====================================================
 st.subheader("✅ 2) DataFrame 미리보기 / 컬럼 확인")
 
-col1, col2 = st.columns([2, 1])
+col1, col2 = st.columns([2, 1])  # [유지]
 
 with col1:
     st.write("📊 상위 5줄(df.head())")
@@ -1779,31 +2490,31 @@ with col2:
 st.subheader("✅ 3) 관제 필터링 (임계치 이상만 보기)")
 
 # API / CSV 컬럼 차이를 흡수
-pm10_candidates = ["PM10", "pm10"]
-name_candidates = ["MSRSTE_NM", "station"]
+pm10_candidates = ["PM10", "pm10"]      # [추가] 컬럼 이름 후보 목록
+name_candidates = ["MSRSTE_NM", "station"]  # [추가]
 
-pm10_col = next((c for c in pm10_candidates if c in df.columns), None)
-name_col = next((c for c in name_candidates if c in df.columns), None)
+pm10_col = next((c for c in pm10_candidates if c in df.columns), None)  # [추가] 실제 존재하는 컬럼 찾기
+name_col = next((c for c in name_candidates if c in df.columns), None)  # [추가]
 
 if pm10_col is None:
     st.warning("⚠️ PM10 컬럼을 찾지 못했습니다. df.columns를 확인해서 컬럼명을 맞춰주세요.")
     st.stop()
 
 # 숫자 변환
-df[pm10_col] = pd.to_numeric(df[pm10_col], errors="coerce")
+df[pm10_col] = pd.to_numeric(df[pm10_col], errors="coerce")  # [수정] 기존 PM10 → 선택된 pm10_col 사용
 
 # 필터링
-if only_bad:
-    filtered = df[df[pm10_col] >= threshold_pm10].copy()
+if only_bad:  # [유지]
+    filtered = df[df[pm10_col] >= threshold_pm10].copy()  # [수정] 하드코드 PM10 → pm10_col
 else:
     filtered = df.copy()
 
-st.write(f"- 사용 컬럼: **{pm10_col}**")
-st.write(f"- 필터 기준: **{pm10_col} >= {threshold_pm10}**")
-st.write(f"- 결과 행 개수: **{len(filtered)}개**")
+st.write(f"- 사용 컬럼: **{pm10_col}**")  # [추가]
+st.write(f"- 필터 기준: **{pm10_col} >= {threshold_pm10}**")  # [추가]
+st.write(f"- 결과 행 개수: **{len(filtered)}개**")  # [추가]
 
 show_cols = []
-if name_col is not None:
+if name_col is not None:  # [추가] 측정소 이름 컬럼이 있을 때만 추가
     show_cols.append(name_col)
 show_cols.append(pm10_col)
 
@@ -1824,9 +2535,9 @@ st.subheader("✅ 4) 차트로 보기 (관제 마무리: TOP 10)")
 if len(filtered) == 0:
     st.info("표시할 데이터가 없습니다. 임계치를 낮추거나 '나쁨 이상만 보기'를 해제해보세요.")
 else:
-    chart_df = filtered.copy()
+    chart_df = filtered.copy()  # [유지]
 
-    if name_col is not None:
+    if name_col is not None:  # [추가] 이름 컬럼이 있을 때와 없을 때 분기
         chart_df = chart_df[[name_col, pm10_col]].dropna()
         chart_df = chart_df.sort_values(by=pm10_col, ascending=False).head(10)
         chart_df = chart_df.set_index(name_col)
@@ -1835,8 +2546,250 @@ else:
         chart_df = chart_df[[pm10_col]].dropna().sort_values(by=pm10_col, ascending=False).head(10)
         st.bar_chart(chart_df[[pm10_col]])
 
-st.caption("✅ 정리: 데이터가 API든 CSV든, DataFrame만 만들면 필터링/표/차트는 동일하게 동작합니다.")
+st.caption("✅ 정리: 데이터가 API든 CSV든, DataFrame만 만들면 필터링/표/차트는 동일하게 동작합니다.")  # [추가]
 ```
+
+의사코드:
+```python
+[0) 라이브러리 불러오기]
+- streamlit: 웹 대시보드 UI 생성용
+- requests: API 호출(HTTP GET 요청)용
+- pandas: DataFrame(표 데이터) 처리용
+
+
+[0) 기본 페이지 설정]
+- 페이지 설정:
+  - 제목: "서울 미세먼지 관제 대시보드"
+  - 아이콘: 🌫️
+  - 레이아웃: wide (가로로 넓게)
+
+- 화면 상단에 큰 제목 출력:
+  - "서울 미세먼지 관제 대시보드 (API / CSV → DataFrame → 필터링)"
+- 설명 문구 출력:
+  - "데이터를 가져와서 기준값(임계치)으로 위험 지역만 걸러서 보여주는 관제 화면입니다."
+
+
+[1) 사이드바: 관제 설정 UI]
+- 사이드바에 섹션 제목 표시: "⚙️ 설정"
+
+- 1-1) 데이터 소스 선택 라디오 버튼
+  - 라벨: "데이터 소스 선택"
+  - 선택지:
+    - "API(실시간)"
+    - "CSV 업로드(브라우저)"
+    - "로컬 CSV(dust_sample.csv)"
+  - 기본값: "API(실시간)"
+
+- 1-2) API KEY 입력칸 (텍스트 입력)
+  - 라벨: "서울 OpenAPI KEY (API 모드에서만 필요)"
+  - 기본값: 빈 문자열 ("")
+  - placeholder: "여기에 본인 API KEY 입력"
+
+- 1-3) API 모드에서 가져올 데이터 개수 선택
+  - 라벨: "가져올 데이터 개수(API 모드)"
+  - 선택지: [5, 10, 20, 50]
+  - 기본 선택: 50 (index=3)
+
+- 1-4) PM10 임계치 슬라이더
+  - 라벨: "PM10 임계치 (나쁨 기준)"
+  - 최소값: 0
+  - 최대값: 150
+  - 기본값: 50
+  - step: 5
+  → 이 값 이상이면 "나쁨 이상"으로 간주
+
+- 1-5) 체크박스: "나쁨 이상만 보기"
+  - 기본값: True
+  → True면 필터링해서 나쁨 이상만 보여주고, False면 전체를 기준으로 사용
+
+- 1-6) 사이드바 구분선 표시
+
+- 1-7) CSV 업로드 UI (CSV 모드일 때만)
+  - 만약 데이터 소스가 "CSV 업로드(브라우저)"라면:
+    - CSV 파일 업로드 컴포넌트 보여줌
+    - 파일 타입: .csv
+    - 업로드된 파일을 uploaded_file 변수에 담음
+
+- 1-8) “🔄 새로고침(재요청)” 버튼 추가
+  - 나중에 API 캐시를 지우고 다시 요청할 때 사용
+
+
+[2) 데이터 로딩 함수 정의]
+
+(2-1) load_from_api(api_key, limit)
+- 목적: API에서 데이터를 가져와 DataFrame으로 변환
+
+- 캐시 기능 사용 (60초 동안 같은 요청 결과 재사용)
+
+- 단계:
+  1. api_key가 비어 있으면:
+     - (None, "API KEY가 비어 있습니다") 반환
+
+  2. 서울시 OpenAPI URL 생성:
+     - "http://openapi.seoul.go.kr:8088/{api_key}/json/airQualityAPI/1/{limit}/"
+
+  3. try로 감싸서 GET 요청 보내기
+     - 실패(네트워크 문제, timeout 등) 시:
+       - (None, "요청 실패: 에러 메시지") 반환
+
+  4. HTTP status code 확인
+     - 200이 아니면:
+       - (None, "HTTP 요청 실패 (status=...) + 응답 미리보기") 반환
+
+  5. Content-Type 헤더 확인
+     - 소문자로 바꾸고 "application/json"으로 시작하는지 체크
+     - JSON이 아니면:
+       - (None, "JSON이 아닙니다 + Content-Type + 응답 미리보기") 반환
+
+  6. JSON 파싱 시도
+     - 실패하면:
+       - (None, "JSON 파싱 실패: 에러 메시지") 반환
+
+  7. data 안에 "airQualityAPI"와 "row" 키가 둘 다 있는지 확인
+     - 없으면:
+       - (None, "응답 구조가 예상과 다릅니다. 키 목록: ...") 반환
+
+  8. rows = data["airQualityAPI"]["row"]
+     - rows 리스트를 DataFrame으로 변환 (df)
+
+  9. (df, None) 반환  → 데이터 OK, 에러 없음
+
+
+(2-2) load_from_uploaded_csv(uploaded_file)
+- 목적: 브라우저로 업로드한 CSV 파일을 DataFrame으로 읽기
+
+- 단계:
+  1. uploaded_file이 None이면:
+     - (None, "CSV 파일이 업로드되지 않았습니다") 반환
+  2. try로 감싸서 pandas.read_csv(uploaded_file) 시도
+     - 성공: (df, None) 반환
+     - 실패: (None, "CSV 읽기 실패: 에러 메시지") 반환
+
+
+(2-3) load_from_local_csv(path="dust_sample.csv")
+- 목적: 로컬에 있는 CSV 파일을 DataFrame으로 읽기
+
+- 단계:
+  1. try로 감싸서 pandas.read_csv(path) 시도
+     - 성공: (df, None) 반환
+  2. FileNotFoundError 발생 시:
+     - (None, "dust_sample.csv 못 찾았다. 같은 폴더에 있는지 확인하라") 반환
+  3. 그 외 에러:
+     - (None, "로컬 CSV 읽기 실패: 에러 메시지") 반환
+
+
+[3) 데이터 로딩 실행]
+
+- 화면에 소제목 출력: "1) 데이터 로딩 결과"
+
+- 만약 새로고침 버튼이 눌렸다면:
+  - load_from_api 함수의 캐시를 비운다.
+
+- data_source 값에 따라 분기:
+  1. "API(실시간)"이면:
+     - load_from_api(api_key, limit) 호출 → (df, err)
+  2. "CSV 업로드(브라우저)"이면:
+     - load_from_uploaded_csv(uploaded_file) 호출 → (df, err)
+  3. "로컬 CSV(...)"이면:
+     - load_from_local_csv("dust_sample.csv") 호출 → (df, err)
+
+- err가 None이 아니면 (즉, 에러가 있으면):
+  - 빨간 에러 메시지 표시
+  - 아래에 안내 문구 작성 (실무에서도 이런 에러 로그가 중요하다고 설명)
+  - err 내용을 코드 블록으로 보여줌
+  - st.stop()으로 이후 코드 실행 중단
+
+- df가 None이면:
+  - "DataFrame 생성 실패(df=None)" 에러 표시
+  - st.stop()으로 종료
+
+- 둘 다 괜찮으면:
+  - 초록색 성공 메시지: "데이터 로딩 성공 (DataFrame 생성 완료)"
+
+
+[4) DataFrame 기본 확인]
+
+- 화면에 소제목: "2) DataFrame 미리보기 / 컬럼 확인"
+
+- 화면을 두 컬럼(왼 2, 오른 1 비율)으로 나눈다.
+
+- 왼쪽(col1):
+  - "상위 5줄(df.head())" 라는 설명
+  - df.head()를 표로 출력
+
+- 오른쪽(col2):
+  - "컬럼 목록" 설명
+  - df.columns 리스트 출력
+
+
+[5) 임계치 기반 필터링]
+
+- 화면에 소제목: "3) 관제 필터링 (임계치 이상만 보기)"
+
+- 5-1) PM10 컬럼 이름 후보 목록 준비
+  - pm10_candidates = ["PM10", "pm10"]
+- 5-2) 측정소 이름 컬럼 후보 목록 준비
+  - name_candidates = ["MSRSTE_NM", "station"]
+
+- 5-3) 실제 DataFrame에 존재하는 컬럼 찾기
+  - pm10_col = pm10_candidates 중 df.columns에 존재하는 첫 번째 것, 없으면 None
+  - name_col = name_candidates 중 df.columns에 존재하는 첫 번째 것, 없으면 None
+
+- 5-4) 만약 pm10_col이 None이라면:
+  - "PM10 컬럼을 찾지 못했습니다" 경고 출력
+  - 실행 중단
+
+- 5-5) pm10_col 컬럼을 숫자로 변환 (to_numeric, errors="coerce")
+  - 문자열이면 숫자로, 안 되면 NaN
+
+- 5-6) 필터링 로직:
+  - only_bad가 True면:
+    - filtered = pm10_col >= threshold_pm10 인 행들만 copy()
+  - only_bad가 False면:
+    - filtered = df 전체 copy()
+
+- 5-7) 필터링 정보 표시:
+  - 사용 컬럼 이름: pm10_col
+  - 필터 기준: pm10_col >= threshold_pm10
+  - 결과 행 개수: len(filtered)
+
+- 5-8) 화면에 보여줄 컬럼 목록 만들기 (show_cols)
+  - name_col이 있으면 먼저 넣고
+  - 그 다음에 pm10_col 추가
+
+- 5-9) filtered가 0행이면:
+  - "기준 이상 지역 없음 (모두 양호)" 메시지 출력
+- 그렇지 않으면:
+  - filtered[show_cols]를 pm10_col 기준 내림차순 정렬해서 표로 표시
+
+
+[6) 차트로 보기 (관제 마무리: TOP 10)]
+
+- 화면에 소제목: "4) 차트로 보기 (관제 마무리: TOP 10)"
+
+- filtered가 0행이면:
+  - "표시할 데이터가 없습니다. 임계치를 낮추거나 체크박스 해제해보라" 안내문 출력
+
+- 데이터가 있으면:
+  - chart_df = filtered 복사
+
+  - name_col이 있는 경우:
+    - chart_df에서 name_col과 pm10_col만 선택
+    - 결측값(NaN) 제거
+    - pm10_col 기준으로 내림차순 정렬 후 상위 10개만 선택
+    - name_col을 인덱스로 설정
+    - bar_chart로 pm10_col 값 그리기
+
+  - name_col이 없는 경우:
+    - chart_df에서 pm10_col만 선택
+    - 결측값 제거
+    - pm10_col 기준 내림차순 정렬 후 상위 10개
+    - bar_chart로 pm10_col 값만 그리기
+
+- 마지막으로 캡션:
+  - "데이터가 API든 CSV든, DataFrame만 만들면 필터링/표/차트는 동일하게 동작한다"는 요약 문구 출력
+```
+
 
 실행
 ```bash
@@ -1986,6 +2939,7 @@ st.set_page_config(
     layout="wide",
 )
 
+# [수정] 제목/설명에 "탐색" 개념 추가 (이전엔 관제까지)
 st.title("🌫️ 서울 미세먼지 관제 대시보드 (API / CSV → DataFrame → 관제 + 탐색)")
 st.write(
     "데이터를 가져와서 DataFrame으로 만들고, 임계치 기준으로 위험 지역을 걸러본 뒤 "
@@ -1997,6 +2951,7 @@ st.write(
 # =====================================================
 st.sidebar.header("⚙️ 설정")
 
+# [수정] 라벨 텍스트 약간 변경 (CSV 업로드/로컬 표현 다듬기, 기본값 index=1로 CSV 모드 강조)
 data_source = st.sidebar.radio(
     "데이터 소스 선택",
     ["API(실시간)", "CSV 업로드(파일)", "CSV 로컬(폴더)"],
@@ -2004,7 +2959,7 @@ data_source = st.sidebar.radio(
 )
 
 api_key = st.sidebar.text_input(
-    "서울 OpenAPI KEY (API 모드에서만 사용)",
+    "서울 OpenAPI KEY (API 모드에서만 사용)",  # [수정] 설명 문구 약간 수정
     value="",
     placeholder="여기에 본인 API KEY 입력",
 )
@@ -2019,15 +2974,17 @@ threshold_pm10 = st.sidebar.slider(
     step=5,
 )
 
+# [수정] 체크박스 라벨에 "PM10 임계치 이상" 설명 추가
 only_bad = st.sidebar.checkbox("나쁨 이상만 보기(PM10 임계치 이상)", value=True)
 
+# [추가] 새로고침 버튼 (이전 버전에서도 있었지만, 아래에서 st.rerun과 함께 동작 방식 강화)
 refresh = st.sidebar.button("🔄 새로고침(재요청)")
 
 # =====================================================
 # ✅ 2) 데이터 로딩 함수들
 # =====================================================
 
-# ✅ [추가] API 호출은 캐시 적용(과도한 요청 방지)
+# ✅ [추가] API 호출은 캐시 적용(과도한 요청 방지) — 이전 코드와 동일한 패턴 유지
 @st.cache_data(ttl=60)
 def load_from_api(api_key: str, limit: int):
     """
@@ -2037,7 +2994,7 @@ def load_from_api(api_key: str, limit: int):
       - 실패: (None, 에러메시지 str)
     """
     if not api_key.strip():
-        return None, "API KEY가 비어 있습니다. 왼쪽 사이드바에 KEY를 입력하세요."
+        return None, "API KEY가 비어 있습니다. 왼쪽 사이드바에 KEY를 입력하세요."  # [유지]
 
     url = f"http://openapi.seoul.go.kr:8088/{api_key}/json/airQualityAPI/1/{limit}/"
 
@@ -2050,7 +3007,7 @@ def load_from_api(api_key: str, limit: int):
     if response.status_code != 200:
         return None, (
             f"HTTP 요청 실패 (status={response.status_code})\n\n"
-            f"응답 미리보기:\n{response.text[:800]}"
+            f"응답 미리보기:\n{response.text[:800]}"  # [수정] 미리보기 길이 500 → 800
         )
 
     content_type = response.headers.get("Content-Type", "")
@@ -2058,7 +3015,7 @@ def load_from_api(api_key: str, limit: int):
     # ✅ [수정] Content-Type 판별을 이전 단계와 동일하게(더 안전)
     is_json = content_type.lower().startswith("application/json")
     if not is_json:
-        preview = response.text[:800]
+        preview = response.text[:800]  # [수정] 미리보기 길이 확장
         return None, (
             f"JSON이 아닙니다. (Content-Type: {content_type})\n\n"
             f"응답 미리보기(앞부분):\n{preview}"
@@ -2078,6 +3035,7 @@ def load_from_api(api_key: str, limit: int):
 
 
 def load_from_csv_upload(uploaded_file):
+    """[유지] 브라우저에서 업로드한 CSV를 읽는 함수"""
     if uploaded_file is None:
         return None, "CSV 파일이 업로드되지 않았습니다. 왼쪽에서 파일을 선택하세요."
 
@@ -2089,6 +3047,7 @@ def load_from_csv_upload(uploaded_file):
 
 
 def load_from_csv_local(filename: str = "dust_sample.csv"):
+    """[유지] app.py와 같은 폴더에 있는 로컬 CSV를 읽는 함수"""
     try:
         df = pd.read_csv(filename)
         return df, None
@@ -2103,16 +3062,16 @@ def load_from_csv_local(filename: str = "dust_sample.csv"):
 # =====================================================
 st.subheader("✅ 1) 데이터 로딩 결과")
 
-# ✅ [추가] refresh 버튼 클릭 시 캐시 삭제 + 재실행
-# (API 모드일 때 의미가 큼)
+# ✅ [수정] refresh 시 캐시 삭제 + rerun까지 수행 (이전엔 clear만)
 if refresh:
     load_from_api.clear()
     st.rerun()
 
 uploaded_file = None
-if data_source == "CSV 업로드(파일)":
+if data_source == "CSV 업로드(파일)":  # [수정] 라벨 이름과 맞춤
     uploaded_file = st.sidebar.file_uploader("CSV 파일 업로드", type=["csv"])
 
+# [수정] data_source 값에 맞게 분기 라벨 변경 (브라우저 → 파일, 로컬 → 폴더)
 if data_source == "API(실시간)":
     df, err = load_from_api(api_key, limit)
 elif data_source == "CSV 업로드(파일)":
@@ -2122,7 +3081,7 @@ else:
 
 if err is not None:
     st.error("❌ 데이터를 가져오지 못했습니다.")
-    st.write("아래 메시지를 확인하세요. (실무 관제에서도 이런 안내가 매우 중요합니다.)")
+    st.write("아래 메시지를 확인하세요. (실무 관제에서도 이런 안내가 매우 중요합니다.)")  # [유지]
     st.code(err)
     st.stop()
 
@@ -2142,7 +3101,7 @@ col1, col2 = st.columns([2, 1])
 
 with col1:
     st.write("📊 상위 5줄(df.head())")
-    # ✅ [수정] width="stretch" 제거 → Streamlit 표준 use_container_width 사용
+    # ✅ [수정] width="stretch" 같은 커스텀 대신 use_container_width 표준 옵션 사용
     st.dataframe(df.head(), use_container_width=True)
 
 with col2:
@@ -2154,8 +3113,8 @@ with col2:
 # =====================================================
 st.subheader("✅ 3) 관제 필터링 (임계치 이상만 보기)")
 
-pm10_candidates = ["PM10", "pm10"]
-station_candidates = ["MSRSTE_NM", "station"]
+pm10_candidates = ["PM10", "pm10"]          # [유지]
+station_candidates = ["MSRSTE_NM", "station"]  # [유지]
 
 pm10_col = next((c for c in pm10_candidates if c in df.columns), None)
 station_col = next((c for c in station_candidates if c in df.columns), None)
@@ -2185,7 +3144,7 @@ if len(filtered) == 0:
 else:
     st.dataframe(
         filtered[show_cols].sort_values(by=pm10_col, ascending=False),
-        use_container_width=True,  # ✅ [수정]
+        use_container_width=True,  # ✅ [수정] 통일된 출력 옵션
     )
 
 # =====================================================
@@ -2212,9 +3171,10 @@ st.caption("✅ 정리: 데이터가 API든 CSV든, DataFrame만 만들면 필�
 # =====================================================================
 # ✅ 7) 관제 탐색: 필터링/정렬 실습 파트
 # =====================================================================
-st.divider()
-st.header("🔍 5) 관제 데이터 탐색 (필터링 / 정렬)")
+st.divider()  # [추가] 관제 파트와 탐색 파트를 시각적으로 구분
+st.header("🔍 5) 관제 데이터 탐색 (필터링 / 정렬)")  # [추가] 새로운 큰 섹션
 
+# [추가] 탐색 모드 설명 텍스트(관제 vs 탐색 개념 정리)
 st.write(
     """
 **왜 이 단계가 필요한가?**
@@ -2227,7 +3187,7 @@ st.write(
 """
 )
 
-explore_df = df.copy()
+explore_df = df.copy()  # [추가] 관제용 filtered와 분리해서 탐색용 복사본 사용
 
 # -------------------------------------------------
 # 7-1) 지역 선택 필터링
@@ -2235,44 +3195,44 @@ explore_df = df.copy()
 if station_col is None:
     st.warning("⚠️ 지역(station) 컬럼이 없어 지역 기반 탐색(필터)이 제한됩니다. CSV 컬럼명을 확인하세요.")
 else:
-    st.subheader("① 선택한 지역만 보기 (필터링)")
+    st.subheader("① 선택한 지역만 보기 (필터링)")  # [추가]
 
-    stations = sorted(explore_df[station_col].dropna().unique())
-    selected_station = st.selectbox("지역 선택", stations)
+    stations = sorted(explore_df[station_col].dropna().unique())  # [추가]
+    selected_station = st.selectbox("지역 선택", stations)        # [추가]
 
-    station_only = explore_df[explore_df[station_col] == selected_station].copy()
+    station_only = explore_df[explore_df[station_col] == selected_station].copy()  # [추가]
     st.write(f"✅ **{selected_station}** 데이터만 표시합니다.")
-    st.dataframe(station_only, use_container_width=True)  # ✅ [수정]
+    st.dataframe(station_only, use_container_width=True)  # ✅ [추가] 탐색용 테이블
 
 # -------------------------------------------------
 # 7-2) PM10 기준 이상 필터링(탐색용)
 # -------------------------------------------------
-st.subheader("② PM10 기준값을 바꿔가며 보기 (필터링)")
+st.subheader("② PM10 기준값을 바꿔가며 보기 (필터링)")  # [추가]
 
 pm10_series = explore_df[pm10_col].dropna()
-min_pm10 = int(pm10_series.min()) if len(pm10_series) else 0
-max_pm10 = int(pm10_series.max()) if len(pm10_series) else 150
+min_pm10 = int(pm10_series.min()) if len(pm10_series) else 0   # [추가] 슬라이더 최소값 동적 계산
+max_pm10 = int(pm10_series.max()) if len(pm10_series) else 150 # [추가] 슬라이더 최대값 동적 계산
 
 threshold_test = st.slider(
     "PM10 기준 값 선택(탐색용)",
     min_value=min_pm10,
     max_value=max_pm10,
-    value=min(50, max_pm10),
+    value=min(50, max_pm10),  # [추가] 데이터 범위 안에서 기본값 50 사용
 )
 
-high_pm10 = explore_df[explore_df[pm10_col] >= threshold_test].copy()
+high_pm10 = explore_df[explore_df[pm10_col] >= threshold_test].copy()  # [추가]
 st.write(f"✅ PM10이 **{threshold_test} 이상**인 행만 표시합니다.")
-st.dataframe(high_pm10, use_container_width=True)  # ✅ [수정]
+st.dataframe(high_pm10, use_container_width=True)  # [추가]
 
 # -------------------------------------------------
 # 7-3) 정렬: 위험도 순으로 보기
 # -------------------------------------------------
-st.subheader("③ 위험도 순서로 정렬 (Sort)")
+st.subheader("③ 위험도 순서로 정렬 (Sort)")  # [추가]
 
 sort_order = st.radio(
     "정렬 순서 선택",
     ("PM10 높은 순", "PM10 낮은 순"),
-    horizontal=True,
+    horizontal=True,  # [추가] 라디오를 가로로 배치
 )
 
 if sort_order == "PM10 높은 순":
@@ -2280,20 +3240,20 @@ if sort_order == "PM10 높은 순":
 else:
     sorted_df = explore_df.sort_values(pm10_col, ascending=True)
 
-st.dataframe(sorted_df, use_container_width=True)  # ✅ [수정]
+st.dataframe(sorted_df, use_container_width=True)  # [추가]
 
 # -------------------------------------------------
 # 7-4) 지역 + 정렬 조합 (필터 + 정렬)
 # -------------------------------------------------
-st.subheader("④ 지역 + 정렬 조합 보기 (필터 + 정렬)")
+st.subheader("④ 지역 + 정렬 조합 보기 (필터 + 정렬)")  # [추가]
 
 if station_col is None:
     st.info("지역(station) 컬럼이 없어서 조합 기능을 사용할 수 없습니다.")
 else:
-    c1, c2 = st.columns(2)
+    c1, c2 = st.columns(2)  # [추가] 지역/정렬 옵션을 두 컬럼으로 배치
 
     with c1:
-        station_for_combo = st.selectbox("지역 선택(조합용)", stations, key="combo_station")
+        station_for_combo = st.selectbox("지역 선택(조합용)", stations, key="combo_station")  # [추가]
 
     with c2:
         order_for_combo = st.radio(
@@ -2303,7 +3263,7 @@ else:
             horizontal=True,
         )
 
-    combo_filtered = explore_df[explore_df[station_col] == station_for_combo].copy()
+    combo_filtered = explore_df[explore_df[station_col] == station_for_combo].copy()  # [추가]
 
     if order_for_combo == "PM10 높은 순":
         combo_result = combo_filtered.sort_values(pm10_col, ascending=False)
@@ -2311,9 +3271,331 @@ else:
         combo_result = combo_filtered.sort_values(pm10_col, ascending=True)
 
     st.write(f"✅ **{station_for_combo}** / **{order_for_combo}** 결과")
-    st.dataframe(combo_result, use_container_width=True)  # ✅ [수정]
+    st.dataframe(combo_result, use_container_width=True)  # [추가]
 
-st.caption("✅ 관제 팁: 필터(대상 선택) → 정렬(우선순위) 순서로 보면, 실무 관제처럼 판단이 쉬워집니다.")
+st.caption("✅ 관제 팁: 필터(대상 선택) → 정렬(우선순위) 순서로 보면, 실무 관제처럼 판단이 쉬워집니다.")  # [추가]
+```
+
+의사코드:
+```python
+[0) 페이지 기본 설정]
+
+- 웹 대시보드 페이지 설정:
+  - 제목: "서울 미세먼지 관제 대시보드"
+  - 아이콘: 🌫️
+  - 화면 레이아웃: 가로로 넓게(wide)
+
+- 페이지 상단에 제목과 설명 표시:
+  - 제목: "서울 미세먼지 관제 대시보드 (API / CSV → DataFrame → 관제 + 탐색)"
+  - 설명: 
+    - 데이터를 DataFrame으로 만들고
+    - 임계치(기준값)로 위험 지역을 걸러보고
+    - 필터/정렬로 관제 담당자처럼 “탐색”하는 대시보드
+
+
+[1) 사이드바: 데이터 소스 & 관제 설정]
+
+- 사이드바에 “⚙️ 설정” 헤더 표시
+
+- 데이터 소스 선택 라디오 버튼:
+  - 선택지:
+    1) "API(실시간)"
+    2) "CSV 업로드(파일)"
+    3) "CSV 로컬(폴더)"
+  - 기본 선택: "CSV 업로드(파일)"
+
+- API KEY 입력 칸(텍스트 박스):
+  - 라벨: "서울 OpenAPI KEY (API 모드에서만 사용)"
+  - 기본값: 빈 문자열
+  - placeholder: “여기에 본인 API KEY 입력”
+
+- API 모드일 때 가져올 데이터 수 선택(드롭다운):
+  - 선택지: 5, 10, 20, 50
+  - 기본값: 50
+
+- PM10 임계치 입력(슬라이더):
+  - 0 ~ 150
+  - 기본값: 50
+  - 5 단위로 움직임
+
+- 체크박스:
+  - “나쁨 이상만 보기(PM10 임계치 이상)”
+  - 기본값: 체크됨(True)
+  - → 체크되면 “PM10 ≥ 임계치” 인 행만 보여주기
+
+- “🔄 새로고침(재요청)” 버튼:
+  - 나중에 API 캐시를 지우고 화면을 다시 그릴 때 사용
+
+
+[2) 데이터 로딩 함수 정의]
+
+(2-1) load_from_api(api_key, limit)
+
+- 역할:
+  - 서울 OpenAPI 호출 → JSON 응답 → DataFrame 생성
+  - 결과와 에러 메시지를 함께 반환
+
+- 동작:
+  1. API KEY가 비어 있으면:
+     - (None, "API KEY가 비어 있습니다") 반환
+
+  2. 요청할 URL 생성:
+     - '.../{API_KEY}/json/airQualityAPI/1/{limit}/'
+
+  3. HTTP GET 요청 시도
+     - 네트워크 에러/타임아웃 나면:
+       - (None, "요청 실패: 에러 내용") 반환
+
+  4. HTTP 상태 코드가 200이 아니면:
+     - (None, "HTTP 요청 실패 + 응답 앞부분 미리보기") 반환
+
+  5. 응답 Content-Type 확인:
+     - "application/json"으로 시작하지 않으면:
+       - (None, "JSON이 아님 + 응답 앞부분 미리보기") 반환
+
+  6. JSON 파싱 시도:
+     - 실패하면: (None, "JSON 파싱 실패: 에러") 반환
+
+  7. JSON 구조에서 "airQualityAPI" 키와 그 안의 "row" 키 확인:
+     - 둘 중 하나라도 없으면:
+       - (None, "응답 구조가 예상과 다름 + 키 목록") 반환
+
+  8. rows = data["airQualityAPI"]["row"] 리스트 추출
+
+  9. rows → DataFrame으로 변환
+
+  10. (DataFrame, None) 반환
+
+
+(2-2) load_from_csv_upload(uploaded_file)
+
+- 역할: 브라우저에서 업로드된 CSV 파일 → DataFrame
+
+- 동작:
+  1. 파일이 없으면:
+     - (None, "CSV 파일이 업로드되지 않았습니다") 반환
+  2. CSV 읽기 시도:
+     - 성공: (DataFrame, None)
+     - 실패: (None, "CSV 읽기 실패: 에러") 
+
+
+(2-3) load_from_csv_local(filename="dust_sample.csv")
+
+- 역할: 현재 폴더에 있는 CSV 파일 → DataFrame
+
+- 동작:
+  1. filename 경로에서 CSV 읽기 시도:
+     - 성공: (DataFrame, None)
+  2. 파일이 없으면:
+     - (None, "'dust_sample.csv' 파일을 찾을 수 없습니다") 반환
+  3. 다른 에러 발생 시:
+     - (None, "로컬 CSV 읽기 실패: 에러") 반환
+
+
+[3) 실제 데이터 로딩 진행]
+
+- 화면에 소제목:
+  - "✅ 1) 데이터 로딩 결과"
+
+- 만약 “새로고침” 버튼이 눌렸다면:
+  - API 캐시(load_from_api)를 지우고
+  - 페이지를 다시 실행(st.rerun)
+
+- CSV 업로드 모드일 경우:
+  - 사이드바에 CSV 업로드 위젯 띄움
+  - 선택된 파일 객체를 uploaded_file에 저장
+
+- 선택된 data_source 값에 따라 분기:
+
+  1) "API(실시간)" 이면:
+     - load_from_api(api_key, limit) 호출 → (df, err)
+
+  2) "CSV 업로드(파일)" 이면:
+     - load_from_csv_upload(uploaded_file) 호출 → (df, err)
+
+  3) "CSV 로컬(폴더)" 이면:
+     - load_from_csv_local("dust_sample.csv") 호출 → (df, err)
+
+- 만약 err 가 None이 아니라면:
+  - 빨간 에러 메시지 박스 표시
+  - “실무 관제에서도 이런 안내 중요”라는 설명 출력
+  - err 내용을 코드블록으로 보여주고
+  - 실행 중단
+
+- df 가 None이면:
+  - “DataFrame 생성 실패(df=None)” 에러 출력
+  - 실행 중단
+
+- 문제 없으면:
+  - “데이터 로딩 성공” 성공 메시지 출력
+
+
+[4) DataFrame 기본 구조 확인]
+
+- 소제목: "✅ 2) DataFrame 미리보기 / 컬럼 확인"
+
+- 화면을 두 컬럼으로 나눔: 왼쪽(2), 오른쪽(1)
+
+- 왼쪽:
+  - 텍스트: "📊 상위 5줄(df.head())"
+  - df.head()를 표로 출력
+
+- 오른쪽:
+  - 텍스트: "📌 컬럼 목록"
+  - df.columns 리스트 출력
+
+
+[5) 관제 핵심: 임계치 기반 필터링]
+
+- 소제목: "✅ 3) 관제 필터링 (임계치 이상만 보기)"
+
+- PM10 컬럼 후보 이름 목록:
+  - ["PM10", "pm10"]
+
+- 지역(측정소) 컬럼 후보 이름 목록:
+  - ["MSRSTE_NM", "station"]
+
+- 실제 df.columns 안에 있는 컬럼을 위 후보에서 하나씩 찾아서:
+  - pm10_col 에 할당 (없으면 None)
+  - station_col 에 할당 (없으면 None)
+
+- 만약 pm10_col 이 None이면:
+  - “PM10 컬럼을 찾지 못했습니다” 경고 후 실행 중단
+
+- pm10_col 열을 숫자형으로 변환 (문자 → 숫자, 못 바꾸면 NaN)
+
+- 나쁨 이상 체크 여부에 따라 필터링:
+  - only_bad == True:
+    - filtered = PM10 값이 threshold_pm10 이상인 행들만 복사
+  - only_bad == False:
+    - filtered = df 전체 복사
+
+- 필터링 요약 정보 출력:
+  - 사용 컬럼 이름
+  - 사용한 임계치
+  - 필터링 결과 행 개수
+
+- 화면에 보여줄 컬럼 목록 show_cols 만들기:
+  - station_col 이 있으면 먼저 넣고
+  - 그 다음 pm10_col 추가
+
+- filtered의 길이가 0이면:
+  - “기준 이상 지역 없음(모두 양호)” 안내
+
+- 아니면:
+  - filtered[show_cols] 를 PM10 내림차순으로 정렬한 표를 출력
+
+
+[6) 관제 마무리: TOP 10 차트]
+
+- 소제목: "✅ 4) 차트로 보기 (관제 마무리: TOP 10)"
+
+- 만약 filtered가 비어 있으면:
+  - “표시할 데이터가 없습니다. 임계치를 낮춰보세요” 안내
+
+- 데이터가 있으면:
+  - chart_df = filtered 복사
+
+  - station_col 이 있으면:
+    - station_col, pm10_col 두 컬럼만 선택
+    - NaN 제거
+    - pm10_col 기준 내림차순 정렬 후 상위 10개
+    - station_col을 인덱스로 설정
+    - 막대 그래프로 PM10 보여주기
+
+  - station_col 이 없으면:
+    - pm10_col만 써서 내림차순 TOP 10 막대 그래프
+
+- 아래에 요약 캡션:
+  - “API든 CSV든, DataFrame만 만들면 필터링/표/차트는 동일하게 동작한다”
+
+
+[7) 관제 데이터 ‘탐색’ 실습 파트]
+
+- 구분선 표시
+- 큰 제목: "🔍 5) 관제 데이터 탐색 (필터링 / 정렬)"
+
+- 설명 텍스트:
+  - 앞부분은 시스템이 임계치로 자동 감지(관제)
+  - 이제는 사람이 직접 필터/정렬하면서 탐색/검증
+  - 필터링 = 조건에 맞는 행만 남김
+  - 정렬 = 남은 행의 우선순위(위험도) 정렬
+
+- explore_df = df 복사 (관제용 filtered와는 별개로 사용)
+
+
+(7-1) 지역 선택 필터링
+
+- station_col 이 없으면:
+  - 지역 기반 탐색 불가 안내
+
+- 있으면:
+  - 소제목: "① 선택한 지역만 보기 (필터링)"
+  - station_col의 고유값 목록을 stations로 만듦
+  - 드롭다운으로 지역 하나 선택
+  - explore_df에서 해당 지역만 남긴 station_only 생성
+  - “선택한 지역 데이터만 표시합니다” 문구와 함께 표 출력
+
+
+(7-2) PM10 기준값을 바꿔가며 보기 (탐색용 필터)
+
+- 소제목: "② PM10 기준값을 바꿔가며 보기 (필터링)"
+
+- pm10_series = explore_df[pm10_col] 에서 NaN 제거한 값들
+
+- 슬라이더 범위 계산:
+  - 최소값 = pm10_series 최소값 (없으면 0)
+  - 최대값 = pm10_series 최대값 (없으면 150)
+
+- 슬라이더:
+  - "PM10 기준 값 선택(탐색용)"
+  - min_pm10 ~ max_pm10
+  - 기본값은 (50과 max_pm10 중 작은 값)
+
+- high_pm10 = 해당 기준 이상인 행들만 모은 DataFrame
+
+- “PM10이 선택값 이상인 행만 표시합니다” 문구와 함께 표 출력
+
+
+(7-3) 정렬: 위험도 순 보기
+
+- 소제목: "③ 위험도 순서로 정렬 (Sort)"
+
+- 라디오 버튼:
+  - "PM10 높은 순"
+  - "PM10 낮은 순"
+  - 가로 배치
+
+- 선택값에 따라 explore_df를 PM10 기준으로 오름/내림차순 정렬한 sorted_df 생성
+
+- sorted_df 전체를 표로 출력
+
+
+(7-4) 지역 + 정렬 조합 (필터 + 정렬)
+
+- 소제목: "④ 지역 + 정렬 조합 보기 (필터 + 정렬)"
+
+- station_col 이 없으면:
+  - “지역 컬럼 없어서 조합 기능 사용 불가” 안내
+
+- 있으면:
+  - 두 개의 컬럼 레이아웃 만들기 (왼쪽: 지역, 오른쪽: 정렬 순서)
+
+  - 왼쪽:
+    - “지역 선택(조합용)” 드롭다운으로 stations 중 하나 선택
+
+  - 오른쪽:
+    - “정렬 순서(조합용)” 라디오 버튼:
+      - "PM10 높은 순" / "PM10 낮은 순"
+
+  - combo_filtered = 해당 지역만 필터링한 DataFrame
+
+  - 정렬 순서에 따라 combo_filtered를 정렬 → combo_result
+
+  - “선택한 지역 / 정렬 순서 결과” 문구 + combo_result 표 출력
+
+- 마지막에 캡션:
+  - “관제 팁: 필터(대상 선택) → 정렬(우선순위) 순서로 보면 실무 관제처럼 판단이 쉬워진다”
 ```
 
 실행
@@ -2435,6 +3717,57 @@ with c3:
     else:
         st.error("상태: 경고")
 ```
+
+의사코드:
+```python
+[1] 섹션 제목 표시
+- 화면에 소제목으로 "📌 현재 관제 상태 요약"을 보여준다.
+
+
+[2] 기본 숫자 계산
+- total_count = 전체 데이터 개수 (df의 행 수)
+- bad_count   = 임계치 이상(나쁨 이상)으로 필터된 데이터 개수 (filtered의 행 수)
+
+
+[3] 화면을 3개의 가로 칸으로 나눈다
+- c1, c2, c3 = 3개의 컬럼 영역
+
+
+[4] 첫 번째 칸(c1): 전체 데이터 수 표시
+- c1 영역 안에서:
+    - 라벨: "전체 데이터 수"
+    - 값  : total_count
+    - 대시보드용 지표(metric) 형태로 출력
+
+
+[5] 두 번째 칸(c2): 나쁨 이상 지역 수 표시
+- c2 영역 안에서:
+    - 라벨: "PM10 ≥ (임계치) 지역 수"
+    - 값  : bad_count
+    - 여기서 (임계치)는 threshold_pm10 값 그대로 보여준다.
+
+
+[6] 세 번째 칸(c3): 전체 상태 라벨 표시
+- c3 영역 안에서, bad_count와 total_count를 비교해서 상태를 정한다.
+
+    - 만약 bad_count == 0 이라면:
+        - "상태: 정상" 이라는 초록색(success) 박스를 보여준다.
+
+    - 그렇지 않고 bad_count가 전체의 30% 미만이라면:
+        - "상태: 주의" 라는 노란색(warning) 박스를 보여준다.
+
+    - 그 외(나쁨 이상 비율이 30% 이상)라면:
+        - "상태: 경고" 라는 빨간색(error) 박스를 보여준다.
+
+
+[정리]
+- 이 블록은:
+    - “전체 데이터 수”
+    - “나쁨 이상 데이터 수”
+    - “현재 상태를 한 단어로 표현(정상/주의/경고)”
+  를 한눈에 보여주는 **관제 요약 헤더** 역할을 한다.
+```
+
 
 현재 관제상태 요약 추가전
 ![[Pasted image 20251221172300.png]]
@@ -2652,7 +3985,8 @@ if refresh:
 나중에 `cache` / `session_state` / “조건부 로딩”이 들어오면 `st.rerun()`이 진짜로 의미가 커집니다.
 
 
-최종코드
+최종코드:
+`app.py`
 ```python
 import streamlit as st
 import requests
@@ -2667,7 +4001,7 @@ st.set_page_config(
     layout="wide",
 )
 
-st.title("🌫️ 서울 미세먼지 관제 대시보드 (API / CSV → DataFrame → 관제 + 탐색)")
+st.title("🌫️ 서울 미세먼지 관제 대시보드 (API / CSV → DataFrame → 관제 + 탐색)")  # [수정] 제목에 '탐색' 단계까지 포함
 st.write(
     "데이터를 가져와서 DataFrame으로 만들고, 임계치 기준으로 위험 지역을 걸러본 뒤 "
     "필터/정렬로 관제 담당자처럼 탐색합니다."
@@ -2680,12 +4014,12 @@ st.sidebar.header("⚙️ 설정")
 
 data_source = st.sidebar.radio(
     "데이터 소스 선택",
-    ["API(실시간)", "CSV 업로드(파일)", "CSV 로컬(폴더)"],
-    index=1,
+    ["API(실시간)", "CSV 업로드(파일)", "CSV 로컬(폴더)"],  # [수정] 라벨 문구 약간 정리
+    index=1,  # [수정] 기본값을 CSV 업로드(파일)로 변경 (학습용 CSV 실습 강조)
 )
 
 api_key = st.sidebar.text_input(
-    "서울 OpenAPI KEY (API 모드에서만 사용)",
+    "서울 OpenAPI KEY (API 모드에서만 사용)",  # [수정] 설명 문구 보완
     value="",
     placeholder="여기에 본인 API KEY 입력",
 )
@@ -2700,19 +4034,20 @@ threshold_pm10 = st.sidebar.slider(
     step=5,
 )
 
-only_bad = st.sidebar.checkbox("나쁨 이상만 보기(PM10 임계치 이상)", value=True)
+only_bad = st.sidebar.checkbox("나쁨 이상만 보기(PM10 임계치 이상)", value=True)  # [수정] 설명 문구에 '임계치 이상' 추가
 
-refresh = st.sidebar.button("🔄 새로고침(재요청)")
+refresh = st.sidebar.button("🔄 새로고침(재요청)")  # [유지]
 
 # ✅ 버튼을 눌렀을 때 즉시 rerun(강제 재실행)
-if refresh:
-    st.rerun()
+if refresh:                     # [추가] 즉시 재실행을 위한 첫 번째 rerun 처리
+    st.rerun()                  # [추가] 버튼 클릭 시 전체 스크립트를 다시 실행
+
 
 # =====================================================
 # ✅ 2) 데이터 로딩 함수들
 # =====================================================
 
-# ✅ [추가] API 호출은 캐시 적용(과도한 요청 방지)
+# ✅ API 호출은 캐시 적용(과도한 요청 방지)
 @st.cache_data(ttl=60)
 def load_from_api(api_key: str, limit: int):
     """
@@ -2731,19 +4066,19 @@ def load_from_api(api_key: str, limit: int):
     except Exception as e:
         return None, f"요청 실패(네트워크/timeout 가능): {e}"
 
-    # ✅ [추가] HTTP 상태코드 방어(200이 아니면 에러 처리)
+    # ✅ HTTP 상태코드 방어(200이 아니면 에러 처리)
     if response.status_code != 200:
         return None, (
             f"HTTP 요청 실패 (status={response.status_code})\n\n"
-            f"응답 미리보기:\n{response.text[:800]}"
+            f"응답 미리보기:\n{response.text[:800]}"  # [수정] 미리보기 길이 500 → 800으로 확장
         )
 
     content_type = response.headers.get("Content-Type", "")
 
-    # ✅ [수정] Content-Type 판별을 이전 단계와 동일하게(더 안전)
+    # ✅ Content-Type 판별 (json; charset=utf-8 포함까지 고려)
     is_json = content_type.lower().startswith("application/json")
     if not is_json:
-        preview = response.text[:800]
+        preview = response.text[:800]  # [수정] 미리보기 길이 500 → 800
         return None, (
             f"JSON이 아닙니다. (Content-Type: {content_type})\n\n"
             f"응답 미리보기(앞부분):\n{preview}"
@@ -2763,6 +4098,7 @@ def load_from_api(api_key: str, limit: int):
 
 
 def load_from_csv_upload(uploaded_file):
+    """브라우저에서 업로드한 CSV를 읽는 함수"""
     if uploaded_file is None:
         return None, "CSV 파일이 업로드되지 않았습니다. 왼쪽에서 파일을 선택하세요."
 
@@ -2774,6 +4110,7 @@ def load_from_csv_upload(uploaded_file):
 
 
 def load_from_csv_local(filename: str = "dust_sample.csv"):
+    """app.py와 같은 폴더에 있는 로컬 CSV를 읽는 함수"""
     try:
         df = pd.read_csv(filename)
         return df, None
@@ -2788,16 +4125,17 @@ def load_from_csv_local(filename: str = "dust_sample.csv"):
 # =====================================================
 st.subheader("✅ 1) 데이터 로딩 결과")
 
-# ✅ [추가] refresh 버튼 클릭 시 캐시 삭제 + 재실행
+# ✅ refresh 버튼 클릭 시 캐시 삭제 + 재실행
 # (API 모드일 때 의미가 큼)
-if refresh:
-    load_from_api.clear()
-    st.rerun()
+if refresh:                     # [보완] 캐시까지 삭제 후 새로고침 (위의 rerun와 중복이지만, 캐시 초기화 목적)
+    load_from_api.clear()       # [추가] 기존 캐시된 API 결과를 제거
+    st.rerun()                  # [유지] 재실행
 
 uploaded_file = None
 if data_source == "CSV 업로드(파일)":
     uploaded_file = st.sidebar.file_uploader("CSV 파일 업로드", type=["csv"])
 
+# 데이터 소스 분기 처리
 if data_source == "API(실시간)":
     df, err = load_from_api(api_key, limit)
 elif data_source == "CSV 업로드(파일)":
@@ -2811,7 +4149,7 @@ if err is not None:
     st.code(err)
     st.stop()
 
-# ✅ [추가] df None 방어 (혹시 모를 예외 케이스)
+# ✅ df None 방어 (혹시 모를 예외 케이스)
 if df is None:
     st.error("❌ DataFrame 생성 실패(df=None).")
     st.stop()
@@ -2827,8 +4165,8 @@ col1, col2 = st.columns([2, 1])
 
 with col1:
     st.write("📊 상위 5줄(df.head())")
-    # ✅ [수정] width="stretch" 제거 → Streamlit 표준 use_container_width 사용
-    st.dataframe(df.head(), use_container_width=True)
+    # ✅ width="stretch" 같은 커스텀 대신 use_container_width 표준 옵션 사용
+    st.dataframe(df.head(), use_container_width=True)  # [수정]
 
 with col2:
     st.write("📌 컬럼 목록")
@@ -2870,27 +4208,27 @@ if len(filtered) == 0:
 else:
     st.dataframe(
         filtered[show_cols].sort_values(by=pm10_col, ascending=False),
-        use_container_width=True,  # ✅ [수정]
+        use_container_width=True,  # [수정] 출력 옵션 통일
     )
 
 # =====================================================
-# ✅ 5-0) 관제 핵심: 임계치 기반 필터링
+# ✅ 5-0) 관제 핵심: 요약 상태 박스 추가
 # =====================================================
-st.subheader("📌 현재 관제 상태 요약")
+st.subheader("📌 현재 관제 상태 요약")  # [추가] 관제 현황을 한눈에 보는 섹션 제목
 
-total_count = len(df)
-bad_count = len(filtered)
+total_count = len(df)        # [추가] 전체 데이터 개수
+bad_count = len(filtered)    # [추가] 임계치 이상(나쁨 이상) 데이터 개수
 
-c1, c2, c3 = st.columns(3)
+c1, c2, c3 = st.columns(3)   # [추가] 3개의 요약 박스를 가로로 배치
 
 with c1:
-    st.metric("전체 데이터 수", total_count)
+    st.metric("전체 데이터 수", total_count)  # [추가]
 
 with c2:
-    st.metric(f"PM10 ≥ {threshold_pm10} 지역 수", bad_count)
+    st.metric(f"PM10 ≥ {threshold_pm10} 지역 수", bad_count)  # [추가]
 
 with c3:
-    # 위험 비율로 상태 표현(단순한 룰)
+    # [추가] 위험 비율에 따라 상태를 색깔로 표현 (정상/주의/경고)
     if bad_count == 0:
         st.success("상태: 정상")
     elif bad_count < total_count * 0.3:
@@ -2923,9 +4261,10 @@ st.caption("✅ 정리: 데이터가 API든 CSV든, DataFrame만 만들면 필�
 # =====================================================================
 # ✅ 7) 관제 탐색: 필터링/정렬 실습 파트
 # =====================================================================
-st.divider()
-st.header("🔍 5) 관제 데이터 탐색 (필터링 / 정렬)")
+st.divider()  # [추가] 관제 블록과 탐색 블록 사이 구분선
+st.header("🔍 5) 관제 데이터 탐색 (필터링 / 정렬)")  # [추가] 탐색 섹션 제목
 
+# [추가] 관제 vs 탐색 개념 설명 블록
 st.write(
     """
 **왜 이 단계가 필요한가?**
@@ -2938,7 +4277,7 @@ st.write(
 """
 )
 
-explore_df = df.copy()
+explore_df = df.copy()  # [추가] 탐색용 DataFrame (filtered와 별도 복사본)
 
 # -------------------------------------------------
 # 7-1) 지역 선택 필터링
@@ -2946,23 +4285,23 @@ explore_df = df.copy()
 if station_col is None:
     st.warning("⚠️ 지역(station) 컬럼이 없어 지역 기반 탐색(필터)이 제한됩니다. CSV 컬럼명을 확인하세요.")
 else:
-    st.subheader("① 선택한 지역만 보기 (필터링)")
+    st.subheader("① 선택한 지역만 보기 (필터링)")  # [추가]
 
-    stations = sorted(explore_df[station_col].dropna().unique())
-    selected_station = st.selectbox("지역 선택", stations)
+    stations = sorted(explore_df[station_col].dropna().unique())  # [추가]
+    selected_station = st.selectbox("지역 선택", stations)        # [추가]
 
-    station_only = explore_df[explore_df[station_col] == selected_station].copy()
+    station_only = explore_df[explore_df[station_col] == selected_station].copy()  # [추가]
     st.write(f"✅ **{selected_station}** 데이터만 표시합니다.")
-    st.dataframe(station_only, use_container_width=True)  # ✅ [수정]
+    st.dataframe(station_only, use_container_width=True)  # [수정] use_container_width 적용
 
 # -------------------------------------------------
 # 7-2) PM10 기준 이상 필터링(탐색용)
 # -------------------------------------------------
-st.subheader("② PM10 기준값을 바꿔가며 보기 (필터링)")
+st.subheader("② PM10 기준값을 바꿔가며 보기 (필터링)")  # [추가]
 
 pm10_series = explore_df[pm10_col].dropna()
-min_pm10 = int(pm10_series.min()) if len(pm10_series) else 0
-max_pm10 = int(pm10_series.max()) if len(pm10_series) else 150
+min_pm10 = int(pm10_series.min()) if len(pm10_series) else 0   # [추가] 슬라이더 최소값을 데이터 기반으로 설정
+max_pm10 = int(pm10_series.max()) if len(pm10_series) else 150 # [추가] 슬라이더 최대값도 데이터 기반 설정
 
 threshold_test = st.slider(
     "PM10 기준 값 선택(탐색용)",
@@ -2971,19 +4310,19 @@ threshold_test = st.slider(
     value=min(50, max_pm10),
 )
 
-high_pm10 = explore_df[explore_df[pm10_col] >= threshold_test].copy()
+high_pm10 = explore_df[explore_df[pm10_col] >= threshold_test].copy()  # [추가]
 st.write(f"✅ PM10이 **{threshold_test} 이상**인 행만 표시합니다.")
-st.dataframe(high_pm10, use_container_width=True)  # ✅ [수정]
+st.dataframe(high_pm10, use_container_width=True)  # [수정] use_container_width 적용
 
 # -------------------------------------------------
 # 7-3) 정렬: 위험도 순으로 보기
 # -------------------------------------------------
-st.subheader("③ 위험도 순서로 정렬 (Sort)")
+st.subheader("③ 위험도 순서로 정렬 (Sort)")  # [추가]
 
 sort_order = st.radio(
     "정렬 순서 선택",
     ("PM10 높은 순", "PM10 낮은 순"),
-    horizontal=True,
+    horizontal=True,  # [추가] 가로 방향 배치
 )
 
 if sort_order == "PM10 높은 순":
@@ -2991,20 +4330,20 @@ if sort_order == "PM10 높은 순":
 else:
     sorted_df = explore_df.sort_values(pm10_col, ascending=True)
 
-st.dataframe(sorted_df, use_container_width=True)  # ✅ [수정]
+st.dataframe(sorted_df, use_container_width=True)  # [수정] use_container_width 적용
 
 # -------------------------------------------------
 # 7-4) 지역 + 정렬 조합 (필터 + 정렬)
 # -------------------------------------------------
-st.subheader("④ 지역 + 정렬 조합 보기 (필터 + 정렬)")
+st.subheader("④ 지역 + 정렬 조합 보기 (필터 + 정렬)")  # [추가]
 
 if station_col is None:
     st.info("지역(station) 컬럼이 없어서 조합 기능을 사용할 수 없습니다.")
 else:
-    c1, c2 = st.columns(2)
+    c1, c2 = st.columns(2)  # [추가] 옵션 UI를 2열로 배치
 
     with c1:
-        station_for_combo = st.selectbox("지역 선택(조합용)", stations, key="combo_station")
+        station_for_combo = st.selectbox("지역 선택(조합용)", stations, key="combo_station")  # [추가]
 
     with c2:
         order_for_combo = st.radio(
@@ -3014,7 +4353,7 @@ else:
             horizontal=True,
         )
 
-    combo_filtered = explore_df[explore_df[station_col] == station_for_combo].copy()
+    combo_filtered = explore_df[explore_df[station_col] == station_for_combo].copy()  # [추가]
 
     if order_for_combo == "PM10 높은 순":
         combo_result = combo_filtered.sort_values(pm10_col, ascending=False)
@@ -3022,9 +4361,368 @@ else:
         combo_result = combo_filtered.sort_values(pm10_col, ascending=True)
 
     st.write(f"✅ **{station_for_combo}** / **{order_for_combo}** 결과")
-    st.dataframe(combo_result, use_container_width=True)  # ✅ [수정]
+    st.dataframe(combo_result, use_container_width=True)  # [수정] use_container_width 적용
 
-st.caption("✅ 관제 팁: 필터(대상 선택) → 정렬(우선순위) 순서로 보면, 실무 관제처럼 판단이 쉬워집니다.")
+st.caption("✅ 관제 팁: 필터(대상 선택) → 정렬(우선순위) 순서로 보면, 실무 관제처럼 판단이 쉬워집니다.")  # [추가]
+```
+
+의사코드:
+```python
+[0) 페이지 기본 설정]
+
+- Streamlit 페이지 제목/아이콘/레이아웃 설정
+- 화면 상단에 제목 출력:
+    "서울 미세먼지 관제 대시보드 (API / CSV → DataFrame → 관제 + 탐색)"
+- 한 줄 설명 출력:
+    "DataFrame으로 만들고, 임계치 기준으로 필터링하고, 필터/정렬로 탐색한다."
+
+
+[1) 사이드바: 데이터 소스 + 관제 설정]
+
+- 사이드바에 "⚙️ 설정" 제목 표시
+
+- 데이터 소스 선택 라디오 버튼:
+    옵션 1: "API(실시간)"
+    옵션 2: "CSV 업로드(파일)"
+    옵션 3: "CSV 로컬(폴더)"
+    기본값은 "CSV 업로드(파일)"
+
+- API KEY 입력창:
+    - 레이블: "서울 OpenAPI KEY (API 모드에서만 사용)"
+    - 기본값: 빈 문자열
+    - placeholder: "여기에 본인 API KEY 입력"
+
+- API 모드에서 사용할 "가져올 데이터 개수" 선택:
+    - 선택지: 5, 10, 20, 50
+    - 기본값: 50
+
+- PM10 임계치 슬라이더:
+    - 레이블: "PM10 임계치 (나쁨 기준)"
+    - 최소: 0, 최대: 150, 기본: 50, step: 5
+
+- 체크박스:
+    - 라벨: "나쁨 이상만 보기(PM10 임계치 이상)"
+    - 기본값: 체크됨(True)
+
+- "🔄 새로고침(재요청)" 버튼 생성
+
+- 만약 새로고침 버튼이 눌렸다면:
+    - 전체 앱을 다시 실행(st.rerun)
+
+
+[2) 데이터 로딩 함수 정의]
+
+- 함수 load_from_api(api_key, limit):
+
+    - 만약 api_key가 비어 있으면:
+        - (None, "API KEY가 비어 있습니다...") 반환
+
+    - API URL 생성:
+        "http://openapi.seoul.go.kr:8088/{api_key}/json/airQualityAPI/1/{limit}/"
+
+    - try:
+        - 해당 URL로 HTTP GET 요청 (timeout=10초)
+      except 예외:
+        - (None, "요청 실패(네트워크/timeout 가능): ...") 반환
+
+    - 만약 HTTP 상태코드가 200이 아니면:
+        - 응답 본문 앞부분(800자)까지 잘라서 에러 메시지에 포함하고
+        - (None, "HTTP 요청 실패 ... 응답 미리보기: ...") 반환
+
+    - 응답 헤더에서 Content-Type 읽기
+    - Content-Type이 "application/json"으로 시작하지 않으면:
+        - 응답 텍스트 앞부분(800자)을 잘라 에러 메시지에 포함
+        - (None, "JSON이 아닙니다... 응답 미리보기: ...") 반환
+
+    - try:
+        - response.json()으로 JSON 파싱
+      except 예외:
+        - (None, "JSON 파싱 실패: ...") 반환
+
+    - JSON에서 "airQualityAPI" 키와 그 안의 "row" 키가 없으면:
+        - (None, "응답 구조가 예상과 다릅니다...") 반환
+
+    - rows = data["airQualityAPI"]["row"]
+    - rows 리스트를 pandas DataFrame으로 변환
+    - (DataFrame, None)을 반환
+
+
+- 함수 load_from_csv_upload(uploaded_file):
+
+    - 파일이 None이면:
+        - (None, "CSV 파일이 업로드되지 않았습니다...") 반환
+
+    - try:
+        - pd.read_csv(uploaded_file)로 DataFrame 생성
+        - (DataFrame, None) 반환
+      except 예외:
+        - (None, "CSV 읽기 실패: ...") 반환
+
+
+- 함수 load_from_csv_local(filename="dust_sample.csv"):
+
+    - try:
+        - pd.read_csv(filename)로 DataFrame 생성
+        - (DataFrame, None) 반환
+      except FileNotFoundError:
+        - (None, "'dust_sample.csv' 파일을 찾을 수 없습니다...") 반환
+      except 기타 예외:
+        - (None, "로컬 CSV 읽기 실패: ...") 반환
+
+
+[3) 데이터 로딩 (사용자 선택에 따라 분기)]
+
+- 화면에 부제목 출력: "✅ 1) 데이터 로딩 결과"
+
+- 새로고침 버튼이 눌려있다면:
+    - load_from_api에 저장된 캐시를 비우고(clear)
+    - 앱을 다시 실행(st.rerun)
+
+- uploaded_file 변수를 기본 None으로 둠
+
+- 만약 데이터 소스가 "CSV 업로드(파일)"이면:
+    - 사이드바에서 CSV 파일 업로드 위젯 생성
+    - 사용자가 업로드한 파일을 uploaded_file 변수에 저장
+
+- 데이터 소스에 따라 분기:
+
+    1) "API(실시간)"인 경우:
+        - df, err = load_from_api(api_key, limit)
+
+    2) "CSV 업로드(파일)"인 경우:
+        - df, err = load_from_csv_upload(uploaded_file)
+
+    3) "CSV 로컬(폴더)"인 경우:
+        - df, err = load_from_csv_local("dust_sample.csv")
+
+- 만약 err가 None이 아니라면(에러 발생):
+
+    - 빨간 에러박스에 "데이터를 가져오지 못했습니다." 출력
+    - 추가 설명 텍스트 출력
+    - err 내용을 코드 블록 형태로 출력
+    - 앱 실행을 중지(st.stop)
+
+
+- 만약 df가 None이라면 (예외 방어):
+
+    - 에러 메시지 "DataFrame 생성 실패(df=None)." 출력
+    - 앱 종료(st.stop)
+
+
+- 성공 시:
+    - "✅ 데이터 로딩 성공 (DataFrame 생성 완료)" 메시지 출력
+
+
+[4) DataFrame 기본 확인]
+
+- 부제목 출력: "✅ 2) DataFrame 미리보기 / 컬럼 확인"
+
+- 화면을 두 컬럼으로 나눔 (좌:2, 우:1 비율)
+
+- 왼쪽(col1):
+
+    - "📊 상위 5줄(df.head())" 텍스트 출력
+    - df.head() 결과를 표(DataFrame) 형태로 화면 폭에 맞춰 출력
+
+- 오른쪽(col2):
+
+    - "📌 컬럼 목록" 텍스트 출력
+    - df.columns를 리스트로 변환해서 보여줌
+
+
+[5) 관제 필터링: PM10 임계치 이상만 보기]
+
+- 부제목 출력: "✅ 3) 관제 필터링 (임계치 이상만 보기)"
+
+- pm10 컬럼 후보 목록 정의:
+    - ["PM10", "pm10"]
+
+- 지역(측정소 이름) 컬럼 후보 목록 정의:
+    - ["MSRSTE_NM", "station"]
+
+- df.columns 중에서 pm10 후보 중 실제 존재하는 컬럼을 하나 찾기 → pm10_col
+- df.columns 중에서 station 후보 중 실제 존재하는 컬럼을 하나 찾기 → station_col
+
+- 만약 pm10_col을 찾지 못했다면:
+    - 경고 메시지 출력 ("PM10 컬럼을 찾지 못했습니다...")
+    - 앱 종료
+
+- pm10_col 컬럼을 숫자형으로 강제 변환 (문자 → 숫자, 실패 시 NaN)
+
+- if only_bad(체크박스):
+
+    - filtered = df에서 pm10_col 값이 threshold_pm10 이상인 행만 복사
+
+  else:
+
+    - filtered = df 전체 복사
+
+- 현재 사용 중인 컬럼, 임계치, 필터 결과 행 개수 출력:
+    - "- 사용 컬럼: pm10_col"
+    - "- 필터 기준: pm10_col >= threshold_pm10"
+    - "- 결과 행 개수: len(filtered)"
+
+- show_cols 리스트 생성:
+
+    - station_col이 존재하면 show_cols에 station_col 추가
+    - show_cols에 pm10_col 추가
+
+- 만약 filtered가 비어 있으면:
+    - "기준 이상 지역이 없습니다(모두 양호)" 메시지 출력
+
+- 아니면:
+    - filtered에서 show_cols만 선택하고,
+    - pm10_col 기준 내림차순 정렬 후
+    - 표(DataFrame)로 화면 폭에 맞춰 출력
+
+
+[5-0) 관제 요약 상태 박스]
+
+- 부제목 출력: "📌 현재 관제 상태 요약"
+
+- total_count = df 전체 행 수
+- bad_count = filtered 행 수 (임계치 이상 지역 수)
+
+- 화면을 3개의 컬럼(c1, c2, c3)으로 나눔
+
+- 첫 번째 박스(c1):
+    - st.metric으로 "전체 데이터 수"와 total_count 표시
+
+- 두 번째 박스(c2):
+    - st.metric으로 "PM10 ≥ 임계치 지역 수"와 bad_count 표시
+
+- 세 번째 박스(c3):
+    - bad_count와 total_count 비율에 따라 상태를 나눔:
+        - bad_count == 0  → 초록(success) 박스: "상태: 정상"
+        - 0 < bad_count < 30% * total_count → 노랑(warning) 박스: "상태: 주의"
+        - 그 이상 → 빨강(error) 박스: "상태: 경고"
+
+
+[6) 관제 마무리: 차트로 TOP 10 보기]
+
+- 부제목 출력: "✅ 4) 차트로 보기 (관제 마무리: TOP 10)"
+
+- 만약 filtered가 비어 있으면:
+    - "표시할 데이터가 없습니다..." 안내 출력
+
+- 아니면:
+
+    - chart_df = filtered 복사
+
+    - station_col이 존재하는 경우:
+        - chart_df에서 [station_col, pm10_col] 컬럼만 사용
+        - NaN 제거
+        - pm10_col 기준 내림차순 정렬 후 상위 10개만 선택
+        - station_col을 인덱스로 설정
+        - bar_chart로 pm10_col 막대그래프 출력
+
+    - station_col이 없으면:
+        - pm10_col만 사용, NaN 제거
+        - 내림차순 정렬 후 상위 10개 선택
+        - bar_chart로 pm10_col 막대그래프 출력
+
+- 캡션 출력:
+    - "데이터가 API든 CSV든, DataFrame만 만들면 필터링/표/차트는 동일하게 동작합니다."
+
+
+[7) 관제 데이터 탐색(필터링/정렬 실습)]
+
+- 구분선(st.divider) 출력
+- 큰 제목 출력: "🔍 5) 관제 데이터 탐색 (필터링 / 정렬)"
+
+- 관제 vs 탐색 개념 설명 텍스트 출력:
+    - 관제 = 자동 감지
+    - 탐색 = 사람이 질문하면서 직접 확인
+    - 필터링/정렬의 의미 설명
+
+- explore_df = df 복사
+
+
+[7-1) 지역 선택 필터링]
+
+- 만약 station_col이 없다면:
+    - "지역 컬럼이 없어 지역 기반 탐색이 제한된다" 경고 출력
+
+- station_col이 있으면:
+    - 부제목: "① 선택한 지역만 보기 (필터링)"
+
+    - explore_df[station_col]의 고유값 목록을 정렬해서 stations 리스트 생성
+    - selectbox로 stations 중 하나 선택 → selected_station
+
+    - station_only = explore_df에서 station_col == selected_station인 행들만 복사
+    - "OOO 지역 데이터만 표시합니다" 텍스트 출력
+    - station_only를 표로 출력
+
+
+[7-2) PM10 기준값을 바꿔가며 필터링]
+
+- 부제목: "② PM10 기준값을 바꿔가며 보기 (필터링)"
+
+- pm10_series = explore_df[pm10_col]에서 NaN 제거
+
+- 최소값/최대값 계산:
+    - min_pm10 = pm10_series 최소값 (없으면 0)
+    - max_pm10 = pm10_series 최대값 (없으면 150)
+
+- 슬라이더 생성:
+    - 레이블: "PM10 기준 값 선택(탐색용)"
+    - 범위: min_pm10 ~ max_pm10
+    - 기본값: 50 또는 max_pm10 중 더 작은 값
+
+- high_pm10 = explore_df에서 pm10_col >= threshold_test인 행들만 복사
+
+- "PM10이 X 이상인 행만 표시" 문구 출력
+- high_pm10를 표로 출력
+
+
+[7-3) 정렬: 위험도 순서로 보기]
+
+- 부제목: "③ 위험도 순서로 정렬 (Sort)"
+
+- 정렬 순서 선택 라디오 버튼:
+    - "PM10 높은 순"
+    - "PM10 낮은 순"
+    - 가로 배치
+
+- 선택값에 따라:
+
+    - "PM10 높은 순"이면:
+        - sorted_df = explore_df를 pm10_col 기준 내림차순 정렬
+
+    - "PM10 낮은 순"이면:
+        - sorted_df = explore_df를 pm10_col 기준 오름차순 정렬
+
+- sorted_df를 표로 출력
+
+
+[7-4) 지역 + 정렬 조합 (필터 + 정렬)]
+
+- 부제목: "④ 지역 + 정렬 조합 보기 (필터 + 정렬)"
+
+- 만약 station_col이 없다면:
+    - "지역 컬럼이 없어서 조합 기능 사용 불가" 안내 출력
+
+- station_col이 있으면:
+
+    - c1, c2 두 컬럼 레이아웃 생성
+
+    - c1 안에서:
+        - selectbox로 stations 목록 중 station_for_combo 선택
+
+    - c2 안에서:
+        - 라디오 버튼으로 order_for_combo 선택
+            - "PM10 높은 순"
+            - "PM10 낮은 순"
+
+    - combo_filtered = explore_df에서 station_col == station_for_combo인 행들만 복사
+
+    - 선택한 정렬 방향에 따라 combo_result를 pm10_col 기준으로 정렬
+
+    - "OOO / PM10 높은/낮은 순 결과" 텍스트 출력
+    - combo_result를 표로 출력
+
+- 마지막으로 캡션 출력:
+    - "관제 팁: 필터(대상 선택) → 정렬(우선순위) 순서로 보면 실무 관제처럼 판단이 쉬워진다."
 ```
 
 터미널에 이런 경고가 뜹니다.
