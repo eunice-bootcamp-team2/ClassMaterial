@@ -31,8 +31,8 @@ uv --version
 
 없으면 설치(그러나 우린 이미설치했습니다. 참고만 하세요.)
 ```bash
-curl -LsSf https://astral.sh/uv/install.sh | sh
-source ~/.bashrc
+curl -LsSf https://astral.sh/uv/install.sh | sh  # uv 설치 명령어
+source ~/.bashrc # 지금 터미널에 환경 변수 변경을 즉시 반영하는 명령어
 uv --version
 ```
 
@@ -73,7 +73,7 @@ uv pip install streamlit pandas requests python-dotenv pytest
 
 선택(고급):
 ```bash
-uv pip install matplotlib plotly folium
+uv pip install matplotlib plotly folium streamlit-folium
 ```
 
 설치 확인:
@@ -198,7 +198,7 @@ Streamlit 실행 명령어
 
 필수 라이브러리 (이 4개는 반드시 필요)
 ```bash
-pip install streamlit pandas requests python-dotenv
+uv pip install streamlit pandas requests python-dotenv
 ```
 
 ### 왜 이 4개인가?
@@ -264,7 +264,7 @@ api_key = os.getenv("API_KEY")
 
 선택 패키지 (선택 과제 or 확장 기능 시)
 ```bash
-pip install matplotlib plotly folium
+uv pip install matplotlib plotly folium
 ```
 
 ### 언제 쓰는가?
@@ -1320,6 +1320,10 @@ def build_sidebar_widgets(df: pd.DataFrame) -> Filters:
 ✅ 역할: 화면의 "뼈대(레이아웃)"만 담당
 - 페이지 설정(set_page_config)
 - 탭 생성(tabs)
+
+💡 왜 분리?
+- app.py에서 UI 뼈대를 한 줄로 만들고 싶기 때문
+- "탭을 몇 개 쓸지" 같은 레이아웃 정책은 여기서만 바꾸면 됨
 """
 
 from __future__ import annotations
@@ -1337,10 +1341,13 @@ def setup_page() -> None:
 
 def create_tabs():
     """
-    탭 생성.
-    반환값을 app.py에서 받아서 views.py에 넘겨줄 수 있음.
+    ✅ 탭 생성
+    - app.py에서 tab 객체를 받아 views.py에 전달해 화면을 그림
+
+    ✅ 4개 탭 버전
+    - 데이터 / 차트비교 / 관제 / 지도
     """
-    return st.tabs(["📑 데이터", "📈 차트", "🚨 관제"])
+    return st.tabs(["📑 데이터", "📈 차트(비교)", "🚨 관제", "🗺️ 지도"])
 ```
 ---
 `dashboard/views.py` (탭별 화면 출력 담당)
@@ -1451,7 +1458,220 @@ def render_monitor_tab(tab, filtered: pd.DataFrame, warn_threshold: float) -> No
             st.metric("최대 인구(경고 중)", f"{danger['인구수'].max():,.0f}")
         with col3:
             st.metric("평균 인구(경고 중)", f"{danger['인구수'].mean():,.1f}")
+            
+            
+# =========================================================
+# ✅ [추가 코드] 시각화 비교용(View 확장)
+# - Streamlit 기본 vs Matplotlib vs Plotly
+# - Folium 지도(관제 대상 도시 마커)
+# =========================================================
+
+def render_chart_tab_compare(tab, filtered: pd.DataFrame) -> None:
+    """
+    ✅ 같은 데이터(filtered)로 차트를 3가지 방식으로 비교:
+    1) Streamlit 기본(st.bar_chart / st.line_chart)
+    2) Matplotlib
+    3) Plotly
+    """
+    with tab:
+        st.subheader("📈 차트 탭 (비교: Streamlit vs Matplotlib vs Plotly)")
+
+        if filtered.empty:
+            st.info("표시할 데이터가 없습니다. 사이드바에서 도시를 선택해보세요.")
+            return
+
+        # ----------------------------
+        # 0) 공통: Metric(요약 지표)
+        # ----------------------------
+        total_pop = float(filtered["인구수"].sum())
+        avg_pop = float(filtered["인구수"].mean())
+        max_row = filtered.sort_values("인구수", ascending=False).iloc[0]
+
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.metric("총 인구(합)", f"{total_pop:,.0f} (만 명)")
+        with col2:
+            st.metric("평균 인구", f"{avg_pop:,.1f} (만 명)")
+        with col3:
+            st.metric("최대 도시", f"{max_row['도시']} ({max_row['인구수']:,.0f})")
+
+        st.divider()
+
+        # ----------------------------
+        # 1) 비교 모드 선택
+        # ----------------------------
+        mode = st.radio(
+            "시각화 방식 선택",
+            ["Streamlit 기본", "Matplotlib", "Plotly"],
+            horizontal=True,
+        )
+
+        # ----------------------------
+        # 2) 차트용 데이터(공통)
+        # - 막대/라인 모두 동일한 데이터로 비교해야 "차이"가 보임
+        # ----------------------------
+        chart_df = (
+            filtered[["도시", "인구수"]]
+            .groupby("도시", as_index=False)["인구수"]
+            .sum()
+            .sort_values("인구수", ascending=False)
+        )
+        series = chart_df.set_index("도시")["인구수"]
+
+        # ----------------------------
+        # 3) Streamlit 기본
+        # ----------------------------
+        if mode == "Streamlit 기본":
+            st.markdown("### 📊 막대 차트 (Streamlit)")
+            st.bar_chart(series)
+
+            st.markdown("### 📈 라인 차트 (Streamlit)")
+            st.line_chart(series)
+
+        # ----------------------------
+        # 4) Matplotlib
+        # ----------------------------
+        elif mode == "Matplotlib":
+            try:
+                import matplotlib.pyplot as plt
+            except ImportError:
+                st.error("matplotlib이 설치되어 있지 않습니다. `uv pip install matplotlib` 실행하세요.")
+                return
+
+            st.markdown("### 📊 막대 차트 (Matplotlib)")
+            fig1, ax1 = plt.subplots()
+            ax1.bar(chart_df["도시"], chart_df["인구수"])
+            ax1.set_xlabel("도시")
+            ax1.set_ylabel("인구수(만 명)")
+            ax1.set_title("도시별 인구 비교 (Matplotlib)")
+            st.pyplot(fig1)
+
+            st.markdown("### 📈 라인 차트 (Matplotlib)")
+            fig2, ax2 = plt.subplots()
+            ax2.plot(chart_df["도시"], chart_df["인구수"], marker="o")
+            ax2.set_xlabel("도시")
+            ax2.set_ylabel("인구수(만 명)")
+            ax2.set_title("도시별 인구 비교 (Matplotlib)")
+            st.pyplot(fig2)
+
+        # ----------------------------
+        # 5) Plotly
+        # ----------------------------
+        else:  # mode == "Plotly"
+            try:
+                import plotly.express as px
+            except ImportError:
+                st.error("plotly가 설치되어 있지 않습니다. `uv pip install plotly` 실행하세요.")
+                return
+
+            st.markdown("### 📊 막대 차트 (Plotly)")
+            fig_bar = px.bar(chart_df, x="도시", y="인구수", title="도시별 인구 비교 (Plotly)")
+            st.plotly_chart(fig_bar, use_container_width=True)
+
+            st.markdown("### 📈 라인 차트 (Plotly)")
+            fig_line = px.line(chart_df, x="도시", y="인구수", markers=True, title="도시별 인구 비교 (Plotly)")
+            st.plotly_chart(fig_line, use_container_width=True)
+
+        st.caption("✅ 같은 데이터로 3가지 라이브러리의 표현 방식 차이를 비교합니다.")
+
+
+def render_map_tab_folium(tab, filtered: pd.DataFrame, warn_threshold: float) -> None:
+    """
+    ✅ Folium 지도 탭:
+    - filtered 중 warn_threshold 이상(경고 대상) 도시만 지도에 마커 표시
+    - 좌표는 예시용(하드코딩)이며, 실무에서는 DB/API로 대체
+    """
+    with tab:
+        st.subheader("🗺️ 지도 탭 (Folium 관제)")
+
+        if filtered.empty:
+            st.info("데이터가 없습니다. 사이드바 조건을 바꿔보세요.")
+            return
+
+        # 경고 대상만 추림
+        danger = filtered[filtered["인구수"] >= warn_threshold].copy()
+
+        st.write(f"✅ 지도 표시 기준: 인구수 ≥ {warn_threshold} (만 명)")
+        if danger.empty:
+            st.success("✅ 현재 기준으로 지도에 표시할 경고 도시가 없습니다.")
+            return
+
+        # ✅ 예시 좌표(실무에서는 좌표 데이터 테이블/API 필요)
+        CITY_COORDS = {
+            "서울": (37.5665, 126.9780),
+            "부산": (35.1796, 129.0756),
+            "대구": (35.8714, 128.6014),
+            "제주": (33.4996, 126.5312),
+        }
+
+        # streamlit-folium 필요
+        try:
+            import folium
+            from streamlit_folium import st_folium
+        except ImportError:
+            st.error("folium/streamlit-folium이 필요합니다. `uv pip install folium streamlit-folium` 실행하세요.")
+            return
+
+        # 지도 중심: 경고 도시 첫 번째 좌표 또는 서울(기본)
+        first_city = danger["도시"].iloc[0]
+        center = CITY_COORDS.get(first_city, (37.5665, 126.9780))
+
+        m = folium.Map(location=center, zoom_start=6)
+
+        # 마커 추가
+        missing_coords = []
+        for _, row in danger.iterrows():
+            city = row["도시"]
+            pop = row["인구수"]
+            coord = CITY_COORDS.get(city)
+
+            if not coord:
+                missing_coords.append(city)
+                continue
+
+            # 경고 느낌(빨간 마커)
+            folium.Marker(
+                location=coord,
+                popup=f"{city} / {int(row['연도'])} / {pop:,.0f}만",
+                tooltip=f"⚠️ {city}: {pop:,.0f}만",
+                icon=folium.Icon(color="red", icon="info-sign"),
+            ).add_to(m)
+
+        st_folium(m, width=900, height=520)
+
+        if missing_coords:
+            st.warning(f"⚠️ 좌표가 없어 지도에 못 찍은 도시: {sorted(set(missing_coords))}")
+
+        st.caption("✅ 관제(경고) 대상 도시만 지도에 표시했습니다. (Folium)")
+
 ```
+
+app.py에서 호출을 이렇게 바꿔주세요
+```python
+# app.py에서 import 추가
+from dashboard.views import (
+    render_data_tab,
+    render_chart_tab,            # 기존
+    render_monitor_tab,
+    render_chart_tab_compare,    # ✅ 추가
+    render_map_tab_folium        # ✅ 추가
+)
+
+# 탭 4개 받기
+tab_data, tab_chart, tab_monitor, tab_map = create_tabs()
+
+# 기존 대신 비교 버전 호출(원하면)
+render_data_tab(tab_data, df, filtered)
+
+# ✅ 기존 차트 대신 비교 차트 호출
+render_chart_tab_compare(tab_chart, filtered)
+
+render_monitor_tab(tab_monitor, filtered, filters.warn_threshold)
+
+# ✅ folium 지도 탭
+render_map_tab_folium(tab_map, filtered, filters.warn_threshold)
+```
+
 ---
 `dashboard/state.py` (선택: 세션 상태 유틸)
 	지금 단계에서는 필수는 아님  
@@ -1485,64 +1705,111 @@ def init_state_defaults() -> None:
 ```python
 # app.py
 """
-✅ 역할: "조립(Orchestration)"만 담당
+✅ 역할: "조립(Orchestration)"만 담당 (가장 바람직한 구조)
 - 데이터 로드(services)
 - 위젯 입력(dashboard/widgets)
 - 처리(filtered 생성)
 - 레이아웃/탭 생성(dashboard/layout)
 - 탭별 화면 출력(dashboard/views)
+
+📌 핵심 철학 (실무 구조)
+1) app.py는 "흐름만" 보이게 (읽기 쉬움)
+2) 데이터 로직은 services로 (테스트 가능)
+3) 화면 출력은 views로 (UI만 수정 가능)
+4) 입력 위젯은 widgets로 (사이드바 UX 관리)
 """
 
+from __future__ import annotations
+
 import streamlit as st
-import pandas as pd
 
 from services.data_loader import load_population_csv
 from dashboard.layout import setup_page, create_tabs
 from dashboard.widgets import build_sidebar_widgets
-from dashboard.views import render_data_tab, render_chart_tab, render_monitor_tab
 from dashboard.state import init_state_defaults
+from dashboard.views import (
+    render_data_tab,
+    render_chart_tab_compare,   # ✅ 차트 비교 버전 사용
+    render_monitor_tab,
+    render_map_tab_folium,      # ✅ 지도 탭
+)
 
 
-def main():
-    # 1) 페이지 설정(한 번만)
+def main() -> None:
+    # =====================================================
+    # 0) "앱 시작 시 1번만" 해야 하는 초기 설정들
+    # =====================================================
+    # ✅ (1) 페이지 설정: 브라우저 탭 제목/아이콘/레이아웃 등 (딱 1번)
     setup_page()
 
-    # 2) 세션 초기화(선택)
+    # ✅ (2) 세션 상태 기본값 세팅(선택)
+    # - Streamlit은 위젯 변경 시 스크립트가 재실행됨
+    # - 재실행돼도 유지돼야 하는 값이 있으면 session_state에 둠
     init_state_defaults()
 
-    # 3) 제목/설명
+    # =====================================================
+    # 1) 상단 타이틀 / 설명
+    # =====================================================
     st.title("🏙️ 대한민국 도시 인구 대시보드")
-    st.write("Step 6: 탭 + 차트/Metric + 임계치 기반 관제까지 완성본")
+    st.write("✅ 최종본: 사이드바 필터 + 탭 + 차트/Metric + 임계치 관제 + 지도(Folium)")
 
-    # 4) 데이터 로드 (CSV)
+    # =====================================================
+    # 2) 데이터 로드 (UI와 분리된 services 계층)
+    # =====================================================
+    # ✅ 여기서 CSV → DataFrame 변환 + 컬럼검증 + 타입정리
+    # - UI 코드(app.py)가 CSV 구조에 덜 의존하게 됨
     df = load_population_csv("data/population.csv")
 
-    # 5) 사이드바 위젯(입력) → Filters 반환
+    # =====================================================
+    # 3) 입력(UI) : 사이드바 위젯
+    # =====================================================
+    # ✅ 사용자 입력(연도/도시/임계치)을 Filters로 묶어서 받음
+    # - 이 덩어리 하나만 들고 다니면 app.py가 매우 깔끔해짐
     filters = build_sidebar_widgets(df)
 
-    # 6) 처리: 필터링(입력 → 처리 → 출력 패턴의 '처리')
+    # =====================================================
+    # 4) 처리(Processing) : 필터링
+    # =====================================================
+    # ✅ "입력 → 처리 → 출력" 패턴의 처리 단계
+    # - 필터링은 딱 1번만 하고 결과(filtered)를 탭마다 재사용 (중요!)
     filtered = df[
         (df["연도"] == filters.year) &
         (df["도시"].isin(filters.cities))
-    ]
+    ].copy()
 
-    # 현재 상태 표시(사용자 혼란 방지)
+    # 현재 상태 표시(관제/대시보드에서는 '현재 기준' 표시가 중요)
     st.caption(
-        f"현재 선택: 연도={filters.year}, 도시={len(filters.cities)}개, 임계치={filters.warn_threshold}+"
+        f"현재 선택: 연도={filters.year} | 도시={len(filters.cities)}개 | "
+        f"경고 임계치={filters.warn_threshold:,.0f}+ (만 명)"
     )
 
-    # 7) 탭 생성(레이아웃)
-    tab_data, tab_chart, tab_monitor = create_tabs()
+    # =====================================================
+    # 5) 레이아웃 : 탭 생성
+    # =====================================================
+    tab_data, tab_chart, tab_monitor, tab_map = create_tabs()
 
-    # 8) 탭별 출력(View)
+    # =====================================================
+    # 6) 출력(View) : 탭별 화면 그리기
+    # =====================================================
+    # ✅ 탭별로 "무엇을 보여줄지"는 views.py에만 존재
     render_data_tab(tab_data, df, filtered)
-    render_chart_tab(tab_chart, filtered)
+
+    # ✅ 기존 차트 탭 대신 "비교 차트" 탭 사용
+    render_chart_tab_compare(tab_chart, filtered)
+
+    # ✅ 관제 탭: 임계치 기반 위험 도시 필터링
     render_monitor_tab(tab_monitor, filtered, filters.warn_threshold)
+
+    # ✅ 지도 탭: 경고 대상만 folium 지도에 마커 표시
+    render_map_tab_folium(tab_map, filtered, filters.warn_threshold)
 
 
 if __name__ == "__main__":
     main()
 ```
+
+
+---------------=-==========
 
 실행:
 ```bash
