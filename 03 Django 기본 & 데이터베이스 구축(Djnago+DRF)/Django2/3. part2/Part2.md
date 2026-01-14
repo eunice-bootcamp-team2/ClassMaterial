@@ -57,6 +57,16 @@ mysite/                ← 최상위 프로젝트 디렉토리
 - `manage.py`: Django 명령어 (`runserver`, `migrate` 등) 실행용
 
 ---
+📦 전체 개념 먼저
+> 👉 이 코드는 설문 질문(Question) 과  
+> 👉 그 질문에 딸린 선택지(Choice)를  
+> 👉 데이터베이스 테이블로 만들기 위한 설계도입니다.
+
+- `Question` → 질문 테이블
+- `Choice` → 질문에 속한 선택지 테이블
+- `ForeignKey` → “이 선택지는 어떤 질문에 속해 있나?”
+
+---
 ✅ 1단계: 데이터베이스 설정 확인  [DB설정 공식문서](https://docs.djangoproject.com/en/4.1/ref/settings/#databases)
 
 📂 `mysite/settings.py` 파일을 엽니다.
@@ -114,6 +124,192 @@ class Choice(models.Model):
     def __str__(self):
         return self.choice_text
 ```
+
+---
+### </>의사코드
+
+#### 1️⃣ import 부분
+```python
+from django.db import models
+
+장고야,
+데이터베이스 테이블을 만들기 위한 도구(models)를 사용할게
+```
+	models 안에 CharField, IntegerField, ForeignKey 같은 재료들이 들어 있음
+
+#### 2️⃣ Question 모델 (질문 테이블)
+```python
+class Question(models.Model):
+
+Question이라는 이름의 테이블을 하나 만들 거야
+이 테이블은 Django의 Model 규칙을 따를 거야
+```
+	class = 테이블
+	Question → 실제 DB에서는 question 테이블이 만들어짐
+
+🔹 질문 내용 컬럼
+```python
+question_text = models.CharField(max_length=200)
+
+이 테이블에는
+question_text라는 컬럼이 있고
+최대 200글자까지의 문자열을 저장할 거야
+```
+
+📌 실제 DB에서는:
+```python
+question_text VARCHAR(200)
+
+📌 예:
+- "오늘 점심 뭐 먹을까요?"  
+- "가장 좋아하는 언어는?"
+```
+
+🔹 질문 생성 날짜 컬럼
+```python
+pub_date = models.DateTimeField("date published")
+
+이 질문이 언제 만들어졌는지를
+날짜 + 시간 형태로 저장할 거야
+```
+📌 `"date published"`  
+	→ 관리자 페이지(admin)에서 보여질 설명용 이름
+
+📌 실제 저장 값 예:
+- 2026-01-13 09:30:00
+
+🔹 문자열로 보여주는 방법 (**str**)
+```python
+def __str__(self):
+    return self.question_text
+    
+이 Question 객체를 출력(print)하거나
+관리자 페이지에서 보여줄 때
+질문 내용을 문자열로 보여줘
+```
+📌 없으면?
+- `Question object (1)` 이런 식으로 보임 ❌
+    
+
+📌 있으면?
+- "오늘 점심 뭐 먹을까요?" ✅
+
+🔹 최근에 작성된 질문인지 판단하는 함수
+```python
+def was_published_recently(self):
+
+이 질문이
+최근에 작성된 질문인지
+True / False로 알려주는 기능을 만들 거야
+```
+
+```python
+from django.utils import timezone
+import datetime
+
+현재 시간을 안전하게 가져오기 위해 timezone을 쓰고
+날짜 계산을 위해 datetime을 사용할게
+```
+📌 Django에서는 timezone.now( ) 사용 권장  
+(서버 시간, 설정 시간대 문제 방지)
+
+```python
+return self.pub_date >= timezone.now() - datetime.timedelta(days=1)
+
+질문이 만들어진 시간(pub_date)이
+현재 시간에서 1일 전보다 크거나 같으면
+→ 최근 질문(True)
+아니면 → 오래된 질문(False)
+```
+📌 즉:
+- 24시간 이내 → True
+- 그보다 오래됨 → False
+
+#### 3️⃣ Choice 모델 (선택지 테이블)
+```python
+class Choice(models.Model):
+
+Choice라는 이름의 테이블을 하나 더 만들 거야
+이 테이블도 Django 모델 규칙을 따를 거야
+```
+📌 이 테이블은 **Question에 종속된 테이블**
+
+
+🔹 어떤 질문에 속한 선택지인가?
+```python
+question = models.ForeignKey(Question, on_delete = models.CASCADE)
+
+이 선택지는
+어떤 Question에 속해 있는지 반드시 알아야 해
+
+그래서 Question 테이블을 가리키는 외래키를 만들 거야
+
+만약 질문이 삭제되면
+그 질문에 속한 선택지들도 전부 같이 삭제해
+```
+📌 관계 의미:
+```
+Question 1개
+ └── Choice 여러 개
+```
+📌 DB에서는:
+```
+question_id (외래키 컬럼)
+```
+
+
+🔹 선택지 내용
+```python
+choice_text = models.CharField(max_length=200)
+
+선택지의 내용을
+최대 200글자 문자열로 저장할 거야
+```
+📌 예:
+- 짜장면
+- 짬뽕
+- 볶음밥
+
+
+🔹 투표 수
+```python
+votes = models.IntegerField(default=0)
+
+이 선택지가
+몇 표를 받았는지 숫자로 저장할 거야
+
+처음 생성될 때는
+기본값을 0으로 할게
+```
+📌 IntegerField = 정수  
+📌 default=0 → 처음엔 투표 0표
+
+
+🔹 Choice의 문자열 표현
+```python
+def __str__(self):
+    return self.choice_text
+    
+Choice 객체를 출력하거나
+관리자 페이지에서 보여줄 때
+선택지 내용을 문자열로 보여줘
+```
+
+
+🔗 전체 구조를 말로 풀면
+```python
+Question (질문)
+- 질문 내용
+- 생성 날짜
+
+Choice (선택지)
+- 어떤 질문에 속하는지
+- 선택지 내용
+- 투표 수
+```
+👉 하나의 질문에는 여러 개의 선택지가 달릴 수 있다  
+👉 이것이 바로 1:N 관계 + ForeignKey
+
 ---
 `Question` 모델만 정의
 ```python
@@ -214,6 +410,105 @@ python manage.py migrate
 
 DB 반영뒤 SQlite 뷰어에서 VSCode를 통해 테이블을 확인합니다.
 ![[Pasted image 20250530074355.png]]
+
+---
+### DBeaver로 연동하여 테이브 확인하기
+
+#### `0)` 먼저 확인할 것 (가장 중요)
+0. VSCode(또는 터미널)에서 SQLite DB 파일이 어디에 있는지 경로 확인
+    - Django 기본이면 보통 프로젝트 루트에 `db.sqlite3`
+        
+#### `1.` 그 파일이 실제로 존재하는지 확인
+    - 예: `.../mysite/db.sqlite3`
+        
+> 팁: Django 프로젝트에서 DB 파일 이름은 보통 `db.sqlite3`이지만, settings.py에서 바꿨다면 그 파일을 선택해야 합니다.
+
+---
+#### `3.` DBeaver설치
+
+1️⃣ DBeaver 다운로드 & 설치
+
+① 공식 사이트 접속
+[https://dbeaver.io/download/](https://dbeaver.io/download/)
+
+② 에디션 선택
+- DBeaver Community (무료) 선택 ✅  
+    → SQLite 보기에는 이걸로 충분
+
+③ OS 선택
+- Windows → `.exe`
+- macOS → `.dmg`
+👉 본인 OS에 맞는 파일 다운로드
+
+2️⃣ DBeaver 설치
+
+▶ Windows
+1. 다운로드한 `.exe` 실행
+2. Next → Next → Install
+3. 바탕화면에 **DBeaver 아이콘 생성**
+    
+▶ macOS
+1. `.dmg` 열기
+2. **DBeaver → Applications** 드래그
+3. 응용프로그램에서 실행
+    
+⚠️ macOS 보안 경고 시
+> “열 수 없습니다” → 시스템 설정 → 보안 → 강제 실행
+---
+### 4. 
+
+![[Pasted image 20260113151939.png]]
+
+![[Pasted image 20260113162452.png]]
+
+![[Pasted image 20260113162534.png]]
+
+![[Pasted image 20260113162805.png]]
+SQLite는 서버가 아니라 파일이고, WSL + Windows + 여러 툴이 동시에 열면 파일 잠금이 걸립니다. MySQL이나 PostgreSQL은 서버형 DB이고, SQLite는 파일형 DB라서 구조 자체가 완전히 다릅니다.
+
+SQLite의 철학
+	SQLite는 로컬 개발용 단일 프로세스 DB라고 인식하시면 됩니다.
+
+1️⃣ WSL 터미널에서 Windows 사용자 폴더 목록 확인
+```bash
+ls /mnt/c/Users
+```
+
+그러면 이런 식으로 나옵니다 (예시):
+```
+DESKTOP-PJCRMMU
+Public
+Administrator
+Eunice
+Public
+```
+여기에 나오는 이름 중 하나가 진짜 Windows 계정 폴더명입니다.
+
+2️⃣ Desktop 폴더가 있는지 확인(예시)
+```bash
+ls /mnt/c/Users/Eunice
+```
+여기서 `Desktop` 이 보이면 OK.
+
+3️⃣ 정확한 경로로 다시 복사
+예시 (계정명이 Eunice 인 경우)
+```bash
+cp ~/dango2_official/Django_OfficialDocumentTutorial/mysite/db.sqlite3 /mnt/c/Users/Eunice/Desktop/db.sqlite3
+```
+
+4️⃣ Windows에서 실제로 생겼는지 확인
+Windows 바탕화면(Desktop)에 `db.sqlite3` 파일이 생겼는지 확인
+
+5️⃣ DBeaver에서 연결
+1. DBeaver → **New Connection**
+2. **SQLite**
+3. **Path → Open…**
+4. `Desktop/db.sqlite3` 선택  
+    (경로: `C:\Users\<계정명>\Desktop\db.sqlite3`)
+5. **Test Connection → 성공**
+6. **확인**
+
+![[Pasted image 20260113174946.png]]
 
 ---
 ◽ 모델 롤백 (Rollback the Model)
@@ -876,3 +1171,7 @@ class Reservation(models.Model):
     user = models.ForeignKey(CustomUser, on_delete=models.CASCADE)
     reserved_at = models.DateTimeField(auto_now_add=True)
 ```
+
+---
+
+
