@@ -204,20 +204,58 @@ Django_first_for/
 ---
 🔹 제너릭 뷰(Generic View)란?
 	제너릭 뷰는 목록 보기(List), 상세 보기(Detail), 생성(Create), 수정(Update), 삭제(Delete) 등의 일반적인 작업을 빠르게 구현할 수 있도록 제공되는 클래스 뷰입니다. Django에서 자주 쓰이는 패턴을 간편하게 처리할 수 있도록 미리 만들어 놓은 클래스 기반 뷰(CBV)입니다.
+쉽게 말하면:
+	generic view는 자주 쓰는 웹 기능을 Django가 미리 만들어 둔 뷰 설계도입니다.
+
+🔰 FBV vs CBV 비교
+FBV (Function-Based View)
+```python
+def index(request):
+    질문들 = DB에서 가져오기
+    context에 담기
+    HTML로 응답
+```
+	모든 걸 직접 다 씀
+
+CBV + generic
+```python
+class IndexView(ListView):
+    모델 알려주고
+    템플릿 알려주고
+    필요한 부분만 살짝 수정
+```
+	기본 동작은 Django가 다 해주고 우리는 설정만 함
+
+generic이 왜 필요한가? Django가 이렇게 생각한 거예요:
+	리스트 보여주기  ListView
+	상세페이지 보여주기  DetailView
+	생성/수정/삭제  CreateView / UpdateView / DeleteView
+	이거 매번 똑같잖아?  
+그래서 👇  
+**ListView / DetailView / CreateView / UpdateView / DeleteView**  
+를 미리 만들어 둔 것 = **generic view**
 
 📖 기본구조(Syntax)
 ```python
 from django.views import generic
 
 class MyView(generic.XXXView):#ListView,DetailView...
-    model = MyModel
-    template_name = 'app/template.html'
-    context_object_name = 'object_name'
+    model = MyModel # 어떤 테이블 쓸지 결정
+    template_name = 'app/template.html' # 어떤 HTML로 보여줄지 결정
+    context_object_name = 'object_name' # 템플릿 변수 이름 결정
 
-    def get_queryset(self):
+    def get_queryset(self): # 데이터 가져오는 방법 결정
         return MyModel.objects.all()
+        
+# Django가 자동으로:
+#   - request 처리    
+#   - context 전달    
+#   - render 수행
 ```
 
+즉, `template_name`, `model`, `context_object_name`, `get_queryset` 이런 것들은 Django가 약속한 이름 즉 지정 변수 / 메서드 입니다.
+
+---
 ◽ 자주 사용하는 제너릭 뷰 종류:
 - `ListView`: 객체 리스트를 보여줌
 - `DetailView`: 하나의 객체 상세 보기
@@ -816,4 +854,84 @@ path("<int:pk>/", views.DetailView.as_view(), name="detail")
 ---
 - `choice.id`는 각 선택지의 고유 ID (1, 2, 3)
 ![[Pasted image 20250528174626.png]]
+
+---
+### FBV → CBV 전환 후, curl / Insomnia로 확인하는 이유와 방법
+
+1️⃣ 왜 이 과정을 해야 하나요? (개요)
+Django에서 FBV(Function-Based View)를 CBV(Class-Based View)로 변경했다는 것은 화면을 만드는 방식(구조)을 바꿨다는 뜻입니다.
+
+구조는 바꿨는데,  
+사용자가 접근했을 때 실제로 화면이 정상적으로 나오고 있을까?
+
+즉,
+- URL이 제대로 연결되어 있는지
+- GET 요청에 대해 **200 OK**로 응답하는지
+- DB에서 가져온 데이터가 화면에 정상적으로 렌더링되는지를 개발자 관점에서 직접 검증해야 합니다.
+
+이 검증을 위해 사용하는 도구가 바로  
+👉 `curl` 과 **`Insomnia`** 입니다.
+
+---
+2️⃣ 지금 우리가 확인하려는 것 (핵심 목표)
+
+이번 단계의 목표는 딱 이것입니다.
+> ✅ CBV(ListView, DetailView)로 바꾼 후에도  
+> GET 요청에 대해 정상적으로 200 OK 응답이 오고, 질문 목록 / 질문 상세가 화면에 출력되는지 확인한다.
+
+⚠️ 이 단계는 API(JSON) 검증이 아닙니다.  
+👉 HTML 페이지가 정상적으로 내려오는지 확인하는 단계입니다.
+
+3️⃣ curl로 확인하기 (터미널 기반 검증)
+✅ 1) `/polls/` (목록 페이지) 상태 코드만 확인
+`상태 코드만 딱 확인`
+```bash
+curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.1:8000/polls/
+```
+결과가 `200` 이면:
+- URL 연결 정상
+- CBV(ListView)가 정상 동작 중
+
+---
+✅ 2) 헤더까지 확인해서 진짜 200 OK인지 보기
+```bash
+curl -i http://127.0.0.1:8000/polls/
+```
+
+출력예시
+```
+HTTP/1.1 200 OK
+Content-Type: text/html; charset=utf-8
+```
+	HTML 페이지를 정상적으로 반환하고 있음을 의미합니다.
+
+---
+✅ 3) `/polls/1/` (DetailView) 상태 코드 확인
+```bash
+curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.1:8000/polls/1/
+```
+- `200` → 해당 질문 상세 페이지 정상
+- `404` → 질문이 없거나, 접근이 막힌 상태
+
+---
+✅ 4) HTML 안에 질문 내용이 실제로 있는지 확인
+```bash
+curl -s http://127.0.0.1:8000/polls/1/ | grep -n "question-title"
+```
+이 명령은 HTML 코드 안에 질문 제목이 실제로 렌더링되었는지를 확인합니다.
+
+---
+4️⃣ Insomnia로 확인하기 (GUI 기반 검증)
+이걸 누르면 GET/POST 요청을 직접 만들 수 있습니다.
+![[Pasted image 20260118160535.png]]
+
+![[Pasted image 20260118160729.png]]
+
+![[Pasted image 20260118161108.png]]
+
+### ✔ 이 단계에서 확인하는 것
+
+- CBV(ListView / DetailView)가 정상 동작하는가?
+- GET 요청에 대해 200 OK가 오는가?
+- 데이터가 HTML에 실제로 렌더링되는가?
 
