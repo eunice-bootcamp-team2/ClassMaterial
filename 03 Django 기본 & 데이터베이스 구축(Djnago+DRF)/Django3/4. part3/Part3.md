@@ -27,6 +27,7 @@ def index(request):
 	# return HttpResponse("Hello) 기존코드
 	
 	latest_question_list = Question.objects.order_by("-pub_date")[:5]
+	# - 내림차순 + 오름차순
 	context = {"latest_question_list": latest_question_list}
 	return render(request, "polls/index.html", context)
 ```
@@ -163,6 +164,62 @@ polls/
 │       └── detail.html
 ```
 
+✅`templates/polls/base.html` (템플릿 상속용 베이스 템플릿)
+```html
+{% load static %}
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <title>{% block title %}Polls{% endblock %}</title>
+    <link rel="stylesheet" href="{% static 'polls/styles.css' %}">
+</head>
+<body>
+    {% include "polls/header.html" %}
+
+    <main>
+        {% block content %}
+        <!-- 자식 템플릿에서 이 부분이 채워집니다 -->
+        {% endblock %}
+    </main>
+
+    {% include "polls/footer.html" %}
+
+</body>
+</html>
+```
+
+✅`templates/polls/header.html`
+```html
+{% load static %}
+<header>
+  <div class="site-header">
+    <h1 class="site-title">설문조사 시스템</h1>
+    <nav class="site-nav">
+      <ul>
+        <li><a href="{% url 'polls:index' %}">HOME</a></li>
+      </ul>
+    </nav>
+  </div>
+</header>
+```
+
+✅`templates/polls/footer.html`
+```html
+{% load static %}
+<footer>
+  <div class="site-footer">
+    <p>&copy; 2025 Django Polls. All rights reserved.</p>
+    <p>
+      <a href="https://github.com/yourusername">My GitHub |</a>
+      <a href="/terms">Terms of Service</a>
+    </p>
+  </div>
+</footer>
+```
+	저작권 문구나 링크를 여기 담아 두면, 프로젝트 전체 페이지에서 동일한
+	footer가 사용됩니다.
+
 ✅ `templates/polls/index.html`
 ```html
 {% extends "polls/base.html" %}
@@ -211,62 +268,6 @@ polls/
 {% endblock %}
 ```
 ![[Pasted image 20250531175756.png]]
-
-✅`templates/polls/header.html`
-```html
-{% load static %}
-<header>
-  <div class="site-header">
-    <h1 class="site-title">설문조사 시스템</h1>
-    <nav class="site-nav">
-      <ul>
-        <li><a href="{% url 'polls:index' %}">HOME</a></li>
-      </ul>
-    </nav>
-  </div>
-</header>
-```
-
-✅`templates/polls/footer.html`
-```html
-{% load static %}
-<footer>
-  <div class="site-footer">
-    <p>&copy; 2025 Django Polls. All rights reserved.</p>
-    <p>
-      <a href="https://github.com/yourusername">My GitHub |</a>
-      <a href="/terms">Terms of Service</a>
-    </p>
-  </div>
-</footer>
-```
-	저작권 문구나 링크를 여기 담아 두면, 프로젝트 전체 페이지에서 동일한
-	footer가 사용됩니다.
-
-✅`templates/polls/base.html` (템플릿 상속용 베이스 템플릿)
-```html
-{% load static %}
-<!DOCTYPE html>
-<html lang="ko">
-<head>
-    <meta charset="UTF-8">
-    <title>{% block title %}Polls{% endblock %}</title>
-    <link rel="stylesheet" href="{% static 'polls/styles.css' %}">
-</head>
-<body>
-    {% include "polls/header.html" %}
-
-    <main>
-        {% block content %}
-        <!-- 자식 템플릿에서 이 부분이 채워집니다 -->
-        {% endblock %}
-    </main>
-
-    {% include "polls/footer.html" %}
-
-</body>
-</html>
-```
 
 ✅`polls/index.css`
 ```css
@@ -369,8 +370,6 @@ footer a {
     margin: 0;
     padding: 0;
 }
-
-
 
 .site-nav li:hover {
     background: none;
@@ -562,7 +561,6 @@ render(request, template_name, context=None, content_type=None, status=None, usi
 from django.http import Http404
 from django.shortcuts import render
 from .models import Question
-
 
 
 def detail(request, question_id):
