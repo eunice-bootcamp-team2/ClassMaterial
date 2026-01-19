@@ -140,6 +140,48 @@ TEMPLATES = [
 
 ![[Pasted image 20250528103508.png]]
 
+Django의 기본 규칙 (역참조)
+```python
+모델이름 (소문자) + _set
+```
+
+| 모델      | 역참조 이름        |
+| ------- | ------------- |
+| Choice  | `choice_set`  |
+| Comment | `comment_set` |
+| Review  | `review_set`  |
+Choice 모델이 여러 개 모이는 “집합(set)” 이라서 `_set` 이 question에 연결된 모든 Choice들을 가져와라
+
+- `question` → 현재 질문 하나
+- `choice_set` → 이 질문에 딸린 선택지들
+- `.all()` → 전부 다
+
+---
+### 정방향 접근 방법
+**Choice(선택지) 하나는 반드시 Question(질문) 하나에 속한다.**  
+즉, 선택지에는 “내 부모 질문이 누구인지”를 저장한다.
+- Choice 1: question_id = 1
+- Choice 2: question_id = 1
+- Choice 3: question_id = 2
+
+ex
+```
+choice.question
+```
+
+----
+### 역방향 접근 방법
+- Choice 모델이면 → `choice_set`
+- Comment 모델이면 → `comment_set`
+- Review 모델이면 → `review_set`
+
+여기서 `set`은 진짜 파이썬 set 자료형이라기보단 ‘여러 개가 묶인 그룹’이라는 의미로 이해하면 됩니다.
+
+비유하면:
+- `question` = “1번 질문”
+- `choice_set` = “1번 질문에 연결된 선택지들 찾아주는 검색기”
+즉, “찾아주는 장치”까지만 있고 실제 결과 목록을 꺼내려면 명령이 필요해요.
+
 ---
 `개발 서버 실행 및 및 결과 확인:`
 ```python
