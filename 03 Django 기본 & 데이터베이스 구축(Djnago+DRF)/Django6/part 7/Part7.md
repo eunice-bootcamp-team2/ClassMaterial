@@ -81,7 +81,7 @@ Django에서 인증, 권한, Admin 커스터마이징 등에 많이 사용됩니
 ---
 아래 코드는 어떤 질문(Question)이 최근(하루 이내)에 게시되었는지를 판단하는 `was_published_recently`라는 메서드를 정의하고, 이 메서드를 Django Admin 페이지에 표시되도록 설정한 코드입니다.
 
-✅ `polls/models.py` (추가 메서드 포함)
+###### ✅ `polls/models.py` (추가 메서드 포함)
 ```python
 import datetime
 from django.utils import timezone
@@ -99,6 +99,10 @@ class Question(models.Model):
         now = timezone.now()
         return now - datetime.timedelta(days=1) <= self.pub_date <= now
 ```
+
+🔗 [[# 데코레이터(@admin.display)]] 상세설명으로 이동
+🔗 [[#`polls/admin.py` class QuestionAdmin(admin.ModelAdmin) 하단에 작성된 코드]]
+
 ---
 📁`admin` 커스터마이징 디렉토리 구조:
 ```
@@ -116,16 +120,25 @@ mysite/
 │   ├── apps.py
 │   ├── migrations/
 │   │   └── __init__.py
-│   ├── models.py
-│   ├── templates/
+│   ├── static/
 │   │   └── polls/
-│   │       └── ...     # (필요하다면 앱 전용 템플릿 여기에 추가)
+│   │       ├── css/
+│   │       │    └── polls.css
+│   │       ├── js/
+│   │       │    └── polls.js
+│   │       └── images/
+│   ├── templates/
+│   │   ├── polls/
+│   │   │   ├── base.html
+│   │   │   ├── index.html
+│   │   │   ├── detail.html
+│   │   │   └── results.html
+│   │   │
+│   │   └── admin/
+│   │       └── base_site.html  # ← 관리자 템플릿 커스터마이징 파일
+│   ├── models.py
 │   ├── tests.py
-│   └── views.py
-└── templates/
-    └── admin/
-        └── base_site.html  # ← 관리자 템플릿 커스터마이징 파일
-
+│   └── views.py   
 ```
 ---
 ✅ `templates/admin/base_site.html`
@@ -139,9 +152,11 @@ mysite/
 ```
 - `admin:index` → `/admin/`로 이동 `127.0.0.1:8000/admin/`
 - `index` → `/`로 이동
+
+✅ `templates/polls/header.html`에 관리자페이지와 사용자페이지 바로가기 링크 작성
 ```html
-<a href="{% url 'admin:index' %}">Admin Home</a>
-<a href="{% url 'index' %}">Site Home</a>
+<li><a href="{% url 'polls:index' %}">Site Home</a></li>
+<li><a href="{% url 'admin:index' %}">Admin Home</a></li>
 ```
 ---
 ✨ 코드리뷰
@@ -194,13 +209,23 @@ class QuestionAdmin(admin.ModelAdmin):
 	화면)에서 필드의 배치와 그룹화를 제어합니다.
 	ModelAdmin 클래스 안에 들어가는 설정 중 하나예요.
 
-![[Pasted image 20250603092640.png]]
-
+위의 코드 화면 결과:
 ![[Pasted image 20250603095329.png]]
 
-![[Pasted image 20250603095611.png]]
-![[Pasted image 20250603095624.png]]
+---
+###### `polls/admin.py` class QuestionAdmin(admin.ModelAdmin): 하단에 작성된 코드
+```pythoh
+    list_display = ["question_text", "pub_date", "was_published_recently"]
+    list_filter = ["pub_date"]
+    search_fields = ["question_text"]
+```
+위의 코드 화면결과:
+![[Pasted image 20250603092640.png]]
+- list_display가 보이게 하려면 models.py에 데코레이터를 작성해야 admin과 연동됩니다.
 
+🔗 모델코드로 바로가기 링크[[#✅ `polls/models.py` (추가 메서드 포함)]]
+
+---
 `fieldsets`란?
 - 기본적으로 Django admin은 모델에 정의된 필드를 전부 한 덩어리로 쭉 나열합니다.
 - 하지만 `fieldsets`를 쓰면 폼 필드를 논리적 그룹으로 묶고, 그룹마다 제목을 붙이거나 접을 수 있는(collapse) 스타일을 줄 수 있습니다.
@@ -272,7 +297,7 @@ admin.site.register(Choice)
 - `Choice` 모델은 기본 설정으로 그냥 등록.
 
 ---
-2️⃣ 데코레이터(@admin.display)
+###### 2️⃣ 데코레이터(@admin.display) [[# ]] 
 
 ```python
 import datetime
@@ -301,6 +326,8 @@ from django.contrib import admin
 - `description="Published recently?"`: Admin 페이지의 컬럼 제목입니다.
 
 ![[커리큐럼/03 Django 기본 & 데이터베이스 구축(Djnago+DRF)/images/Pasted image 20250609153241.png]]
+
+[[# 🔗 `polls/models.py` (추가 메서드 포함)]] 다시 돌아가기
 
 ---
 ```python
