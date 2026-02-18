@@ -11,7 +11,7 @@ Gunicorn으로 Django 실행
    ↓
 Fly.io 서버에서 서비스 공개
 ```
-
+#
 위의 시각화의 의미는 다음과 같습니다:
 
 - **내 컴퓨터**에서는 Django가 `python manage.py runserver`로 실행됨
