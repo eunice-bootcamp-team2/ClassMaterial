@@ -11,7 +11,7 @@ Gunicorn으로 Django 실행
    ↓
 Fly.io 서버에서 서비스 공개
 ```
-#
+
 위의 시각화의 의미는 다음과 같습니다:
 
 - **내 컴퓨터**에서는 Django가 `python manage.py runserver`로 실행됨
@@ -34,7 +34,40 @@ Fly.io를 쓰는 이유
 - 콘솔 클릭 위주의 설정 ❌
     
 
-대신:
+Docker의 개요와 필요성
+
+✔ Docker란?
+	내 프로그램이 실행되는 ‘컴퓨터 환경 자체’를 통째로 포장하는 기술입니다.
+	내 컴퓨터에서는 되는데 서버에서는 안 돼요 문제를 없애기 위한 도구
+
+✔ 왜 필요한가요? 
+	로컬에서 Django는 보통 이렇게 실행하죠:
+```
+python manage.py runserver
+```
+하지만 실제 서버에서는:
+- 운영체제: Linux
+- Python 버전 다를 수 있음
+- 설치된 패키지 다를 수 있음
+- 환경변수 방식으로 설정함
+- 환경 차이 때문에 에러가 자주 발생
+- Docker는 이것을 해결합니다.**
+
+✔ Gunicorn이란?
+	Django를 실제 서버에서 실행해주는 실행기(Server 프로그램)입니다.
+
+✔ 왜 runserver를 쓰면 안 되나요?
+	`python manage.py runserver`는
+	- 개발용
+	- 혼자 테스트용
+	- 성능 / 안정성 ❌
+	- 실제 서비스에서는 사용 ❌
+
+✔ Gunicorn의 역할
+	요청이 오면 Django에게 일을 시키고, 결과를 돌려주는 관리자
+
+
+ Fly.io는 CLI로의 배포
 - **CLI 명령어 몇 개로 배포 가능**
 - **Dockerfile 기준으로 정확히 실행**
 - **SSH 접속 가능 (DB migrate, superuser 생성 가능)**
@@ -197,12 +230,12 @@ uv pip freeze > requirements.txt
 `psycopg[binary]`는 Postgres 연결 드라이버입니다(파이썬 3.12에서 안정적).
 
 ###### 각 패키지 역할
-|패키지|역할|
-|---|---|
-|gunicorn|실제 서버에서 Django 실행|
-|whitenoise|static 파일(CSS/JS) 제공|
-|dj-database-url|DATABASE_URL 해석|
-|psycopg|Postgres 연결 드라이버|
+| 패키지             | 역할                   |
+| --------------- | -------------------- |
+| gunicorn        | 실제 서버에서 Django 실행    |
+| whitenoise      | static 파일(CSS/JS) 제공 |
+| dj-database-url | DATABASE_URL 해석      |
+| psycopg         | Postgres 연결 드라이버     |
 `requirements.txt`는 **Dockerfile에서 설치 목록으로 사용**
 
 ---
