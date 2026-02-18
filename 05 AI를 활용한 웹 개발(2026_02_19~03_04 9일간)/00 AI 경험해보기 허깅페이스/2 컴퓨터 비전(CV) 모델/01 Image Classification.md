@@ -21,6 +21,64 @@ https://huggingface.co/DunnBC22/vit-base-patch16-224-in21k_dog_vs_cat_image_clas
 - Hugging Face Inference API 사용 시 → 플랫폼 사용량에 따라 비용 발생 가능 (선택 사항)
 
 ---
+모델에 문제가 없는지 우선 테스트를 합니다.
+새 폴더 + 새 가상환경 만들기(검수 전용)
+```bash
+deactivate  # 가상환경 켜져 있으면
+cd ~
+
+mkdir test_vit
+cd test_vit
+code -r .
+
+uv venv
+source .venv/bin/activate
+```
+
+패키지 설치(최소 구성)
+이미지 분류는 Pillow(이미지 열기)가 꼭 필요합니다.
+```bash
+uv pip install "transformers==4.45.2" torch pillow
+```
+
+테스트 이미지 준비
+```bash
+explorer.exe .
+```
+
+```python
+test_vit/
+ ├── cat.png   ← 아무 jpg/png 가능
+```
+
+`test_vit.py `
+```python
+from transformers import pipeline
+from PIL import Image
+
+MODEL_ID = "DunnBC22/vit-base-patch16-224-in21k_dog_vs_cat_image_classification"
+
+classifier = pipeline("image-classification", model=MODEL_ID)
+
+image = Image.open("cat.jpg")
+
+result = classifier(image)
+
+print(result)
+```
+
+실행:
+```bash
+python test_vit.py
+```
+정상출력
+```
+(test_vit) (.venv) youjung@DESKTOP-PJCRMMU:~/test_vit$ python test_vit.py
+Hardware accelerator e.g. GPU is available in the environment, but no `device` argument is passed to the `Pipeline` object. Model will be on CPU.
+[{'label': 'Cat', 'score': 0.9890297055244446}, {'label': 'Dog', 'score': 0.016582109034061432}]
+```
+
+---
 `0)` 준비: 프로젝트 폴더 만들기
 ```bash
 deactivate # 가상환경안에 있다면
