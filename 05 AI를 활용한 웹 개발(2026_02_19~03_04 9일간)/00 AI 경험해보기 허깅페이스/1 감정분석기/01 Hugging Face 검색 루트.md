@@ -331,3 +331,52 @@ pipeline("automatic-speech-recognition")
 
 🎯 모델을 고를때 기억하면 되는 한 문장
 	모델 종류는 달라도, 항상 Task / 표준 사용법 / 라이브러리는 확인한다.
+
+---
+### 검색한 모델 검증하는 과정
+
+```bash
+deactivate # 가상환경안에 있다면
+cd ~
+mkdir test_llm
+
+cd test_llm
+code -r .
+
+uv venv
+source .venv/bin/activate
+
+uv pip install -U pip
+uv pip install --no-cache-dir "transformers==4.45.2"
+uv pip install torch sentencepiece protobuf safetensors
+
+```
+
+pipeline 테스트
+```python
+from transformers import pipeline
+
+summarizer = pipeline("summarization", model="lcw99/t5-base-korean-text-summary")
+
+text = "이 제품 배송이 빠르고 품질도 만족스러웠습니다."
+print(summarizer(text))
+```
+
+실행:
+```bash
+python test_llm_summary.py
+```
+
+결과
+```
+(llm_test) (.venv) youjung@DESKTOP-PJCRMMU:~/llm_test$ python test_llm_summary.py
+model.safetensors: 100%|███████████████████████████████████| 1.10G/1.10G [00:12<00:00, 86.7MB/s]
+Hardware accelerator e.g. GPU is available in the environment, but no `device` argument is passed to the `Pipeline` object. Model will be on CPU.
+Your max_length is set to 20, but your input_length is only 18. Since this is a summarization task, where outputs shorter than the input are typically wanted, you might consider decreasing max_length manually, e.g. summarizer('...', max_length=9)
+/home/youjung/llm_test/.venv/lib/python3.12/site-packages/transformers/generation/utils.py:1220: UserWarning: Using the model-agnostic default `max_length` (=20) to control the generation length. We recommend setting `max_new_tokens` to control the maximum length of the generation.
+  warnings.warn(
+[{'summary_text': '배송이 정말 빠르고 품질도 만족스러웠습니다. 배송이 정말 '}]
+```
+테스트 성공
+
+테스트용과 개발용 가상환경은 각가 두는것이 훨씬 꼬임방지에 유리합니다.

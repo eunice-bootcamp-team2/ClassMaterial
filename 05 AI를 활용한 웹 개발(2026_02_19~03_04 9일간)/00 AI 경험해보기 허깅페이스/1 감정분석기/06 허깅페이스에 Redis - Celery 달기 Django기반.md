@@ -1,140 +1,88 @@
 
-Redis만 사용 (동기 처리) — `tasks.py` 없음
 요청이 들어오면 그 요청 안에서 바로 HF 추론까지 끝냄
+`Redis + Celery 기반 비동기 분석 구조 (작업 큐 처리 방식): 사용자 요청 처리 단계`
 ```
-[Browser / Front(JS) / Insomnia]
+[Browser / 사용자]
    |
-   | POST /api/sentiment/predict/
+   | POST /new/   (문장 입력)
    v
 mysite/urls.py
    v
-ml/urls.py
+sentiment/urls.py
    v
-ml/views.py  (SentimentPredictAPIView.post)
+sentiment/views.py  (TextItemCreateView.form_valid)
    v
-ml/serializers.py  (입력 검증/파싱)
+sentiment/forms.py  (입력 검증)
    v
-ml/services.py  (analyze_text)
+form.cleaned_data
+   v
+sentiment/models.py  (TextItem 저장)
+      └─ is_analyzing = True  ✅ 분석중 상태 기록
+   v
+sentiment/tasks.py
    |
-   +----> [Redis Cache] (hit이면 즉시 반환)
+   | analyze_textitem_task.delay(item_id)
+   v
+[Redis Broker Queue]   ✅ Redis = 큐 역할
+   v
+[즉시 HTTP 응답 / Redirect]
+```
+	웹 요청 처리와 무거운 AI 연산을 분리하여 서버가 멈추지 않도록 만든 구조설계입니다.
+
+위의 처리 흐름도 설명
+```
+1. Django는 즉시 AI 분석을 하지 않습니다.
+2. 먼저 데이터베이스에 글만 저장합니다.
+3. 그리고 분석 작업을 Celery에게 맡깁니다.
+4. Redis는 이 작업을 잠시 보관하는 대기열 역할을 합니다.
+5. 사용자는 기다리지 않고 바로 응답을 받습니다.
+6. 실제 AI 분석은 뒤에서 별도 프로세스가 수행합니다.
+```
+
+
+백그라운드(워커) 흐름: 비동기 AI 추론 실행 단계- 백그라운드 작업 실행 단계
+```bash
+[Celery Worker Process]
    |
    v
-ml/hf_model.py  (get_classifier)
+sentiment/tasks.py  (analyze_textitem_task 실행)
+   v
+sentiment/models.py  (TextItem 조회)
+   v
+sentiment/services.py  (analyze_text)
+   |
+   +----> [Redis Cache 조회]   ✅ Redis = 캐시 역할
+   |           |
+   |           ├─ HIT  → 즉시 반환
+   |           |
+   |           └─ MISS →
+   |
+   v
+sentiment/hf_model.py  (get_classifier)
    v
 [HuggingFace Model Inference]
    v
-ml/services.py  (결과 정리 + Redis 저장)
+sentiment/services.py  (결과 정리)
    v
-ml/serializers.py  (응답 직렬화)
+[Redis Cache 저장]
    v
-[Response JSON]
+sentiment/models.py
+   ├─ label 저장
+   ├─ score 저장
+   └─ is_analyzing = False  ✅ 분석 완료 상태
 ```
 
-백그라운드(워커) 흐름: 실제 추론 + 저장
-```bash
-[Celery Worker]
-   v
-ml/tasks.py  (analyze_textitem_task 실행)           ✅ 워커가 tasks.py를 실행!
-   v
-ml/models.py  (TextItem 조회)
-   v
-ml/services.py  (analyze_text)
-   |
-   +----> [Redis Cache] (hit이면 즉시 결과 반환)     ✅ 여기 Redis는 "캐시"
-   |
-   v
-ml/hf_model.py  (get_classifier)
-   v
-[HuggingFace Model Inference]
-   v
-ml/services.py  (결과 정리 + Redis Cache 저장)
-   v
-ml/models.py  (label/score 저장 + is_analyzing=False)
+실제 AI 연산 수행 단계 설명: 일꾼(Celery Worker)이 실제 일을 하는 구간
 ```
----
-우리가 제작하는 플랫폼은 아래에 해당합니다.
-즉 API 요청은 `views.py`에서 `TextItem`을 만들고  
-`tasks.py`에 일을 맡긴 뒤,  
-Redis(브로커)에 큐로 넣고 즉시 응답하는 구조로 제작합니다.
-
----
-Redis + Celery 사용 (비동기 처리) — `tasks.py`가 들어가는 정식 흐름
-요청은 빠르게 작업만 등록하고 실제 추론은 Celery worker가 `tasks.py`를 통해 실행
-요청(웹/API) 흐름: 
-`감정분석 작업을 예약(큐에 등록)하는 파이프라인의 구조`
-```bash
-[Browser / Front(JS) / Insomnia]
-- 사용자/클라이언트가 요청을 보내는 쪽    
-- 이 문장 감정분석 해줘라고 서버에 POST 요청함
-   |
-POST /api/sentiment/predict/
-- 감정분석 요청 접수 API 엔드포인트  
-- 여기서는 보통 바로 결과를 주지 않고, 작업을 등록하고 id를 줌  
-   |   
-   v
-mysite/urls.py
-- 길 안내 표지판 /api/sentiment/predict/가 들어오면 어느 앱/어느 urls로 보낼지 결정
-   |   
-   v
-ml/urls.py
-- 이 URL을 어떤 View(클래스/함수)가 처리할지 매칭
-   v
-ml/views.py  (SentimentPredictAPIView.post) AI 작업 접수 창구(등록자)
-- 요청을 받아서   
-- 입력 검사 맡기고(serializer)  
-- DB에 “분석 요청”을 기록하고(models)  
-- Celery에 “분석 작업”을 맡기고   
-- 즉시 응답을 돌려주는 “접수/오케스트레이션(흐름 조립)” 담당
-   | 
-   v
-ml/serializers.py  (입력 검증/파싱) 사용자 입력이 안전/정상인지 확인하고, 뽑아주는 역할
-- 들어온 JSON이 형식이 맞는지 검사
-    - text가 있는지?  
-    - 문자열인지? 
-    - 길이 제한 등  
-- 그리고 validated_data["text"]처럼 깨끗한 입력값을 만들어줌
-   |
-   v
-ml/models.py  (TextItem 저장 + is_analyzing=True) 
-- 분석 요청을 DB에 기록해서 추적 가능한 상태로 만드는 역할
-- DB에 한 줄 저장: 
-    - text 원문
-    - 현재 상태 is_analyzing=True (분석 진행 중)  
-- 즉 작업 티켓(접수표)을 DB에 만들어 둠
-   |
-   v
-ml/tasks.py  (analyze_textitem_task.delay(item_id))  ✅ 여기서 작업 등록!
-- 분석을 지금 하지 않고, Celery 워커에게 나중에 이거 해줘라고 맡기는 역할
-- 여기서 .delay(item_id)를 호출하면:
-    - 이 id를 분석해라 라는 일을 큐에 등록함 
-- tasks.py 자체는 실행 코드가 아니라, 워커가 실행할 작업 함수가 들어있는 파일
-   |
-   v
-[Redis Broker Queue]  (할 일 저장소)                ✅ 여기 Redis는 "큐"
-- 해야 할 일을 잠깐 맡아두는 대기 줄(큐)
-- Redis가 여기서는 캐시가 아니라 할 일 목록(큐)역할 
-- .delay()로 등록된 작업이 Redis에 쌓이고, 
-- Celery 워커가 하나씩 꺼내서 실행함
-   |
-   v
-[Response JSON]  (예: {"id": 10, "status": "queued"})
-- 서버는 즉시 응답함:
-    - 접수 완료
-    - id는 10 
-- 클라이언트는 이 id로 나중에 결과 조회를 해야 함
-- 결과가 아니라 접수번호를 돌려주는 응답
+- Celery 워커가 큐에서 작업을 가져옵니다.    
+- 분석할 TextItem 데이터를 DB에서 조회합니다.   
+- Redis 캐시를 먼저 확인합니다.   
+- 캐시에 결과가 있으면 모델 호출 없이 종료합니다.   
+- 캐시에 없으면 HuggingFace 모델로 추론합니다.   
+- 결과(label, score)를 정리합니다.   
+- Redis에 저장합니다.   
+- DB 상태를 분석 완료로 변경합니다.
 ```
-
-✅ 이 흐름이 하는 일
-
-> 감정분석을 실행하는 흐름이 아니라  
-> 감정분석을 예약(등록)하는 흐름
-
-✅ 허깅페이스 모델이 실행되는 위치
-- 이 흐름(POST 요청 처리) 안에서 실행되는 게 아니라
-- Celery 워커가 `tasks.py`를 실행할 때
-    - `services.py → hf_model.py → HuggingFace inference` 로 실행됨
-
 ---
 역할을 아주 짧게 나누면
 
@@ -142,34 +90,39 @@ ml/tasks.py  (analyze_textitem_task.delay(item_id))  ✅ 여기서 작업 등록
 
 1️⃣ 큐(브로커)
 - "이거 나중에 해줘”라고 맡긴 일을 줄 세워 보관
+- Django에서 `analyze_textitem_task.delay(id)`로 작업을 등록하면  그 작업이 Redis 큐에 쌓이고, Celery 워커가 하나씩 꺼내서 실행함 쉽게 설명하면
 - Celery가 여기서 일을 하나씩 꺼냄
     
 2️⃣ 캐시
-- “이건 이미 계산했어”
-- 다시 계산 안 하려고 결과를 잠깐 저장
+- “이 문장은 이미 분석했어”라는 결과를 **잠깐 저장**해두는 곳
+- 같은 문장이 다시 들어오면 **모델을 다시 돌리지 않고** Redis에서 바로 꺼내 반환
     
-👉 Redis는 창고, 용도에 따라 큐 / 캐시로 씀
+👉 Redis는 창고처럼 상황에 따라 큐 / 캐시로 사용함
 
 
 🟩 Celery
-- 일꾼 관리자
-- “지금은 말고, 뒤에서 처리해”
-- 워커들을 돌려서 큐에 있는 일을 실행
-    
-👉 비동기 실행 엔진
+- 지금은 말고, 뒤에서 처리해를 가능하게 해주는 비동기 실행 엔진
+- Django 요청(웹 폼 제출)이 들어오면 바로 분석하지 않고, Celery 워커에게 이거 분석해줘 
+  라고 일을 맡김
+- 워커가 Redis 큐에서 일을 꺼내서 실제로 실행함
 
 
 🟦 tasks.py
-- 그 일을 어떻게 할지 정리해 둔 파일
+- Celery가 실제로 실행할 작업 함수들을 모아 둔 파일
+- “이 작업을 어떻게 처리할지”를 적어두는 곳
 
 조금 더 정확히 말하면:
-- Celery가 실행할 작업 목록
-- 이 id가 오면 → 이 함수 실행해라를 정의
-    
+1️⃣ Django가 워커에게 일을 맡길 때 id 같은 값만 전달  
+2️⃣ 워커는 `tasks.py`에 정의된 함수를 실행  
+3️⃣ 함수 안에서:
+- DB에서 데이터 찾고
+- 필요한 계산(예: AI 분석) 하고
+- 결과를 다시 저장
 ```python
 @shared_task
-def analyze_textitem_task(id):
-    # 이 일이 실제로 어떻게 수행되는지 적어둔 곳
+def analyze_textitem_task(item_id):
+    # item_id를 받아서
+    # DB 조회 → 분석 → 저장 수행
 ```
 
 아주 직관적인 비유 (현장 느낌)
@@ -232,7 +185,7 @@ DJANGO_SENTIMENT/
 │   ├── tasks.py             # ✅ Celery 비동기 작업 정의
 │   ├── tests.py             # 테스트 코드
 │   ├── urls.py              # sentiment 앱 URL 라우팅
-│   └── views.py             # View (요청 접수, 작업 등록)
+│   └── views.py             # ✅ 요청 접수 + 작업 등록
 │
 ├── db.sqlite3               # SQLite 데이터베이스
 ├── manage.py                # Django 관리 명령어 진입점
@@ -284,10 +237,13 @@ docker --version
 Redis 실행(가장 쉬운 Docker):
 ```bash
 docker run -d --name redis -p 6379:6379 redis:7
+
+# 이미 실행중이라면
+docker restart redis
 ```
 여기까지가 Redis 서버 실행 완료
 
-실행 확인 (추천)
+Redis 실행 전 체크 (추천)
 ```bash
 docker ps
 ```
@@ -319,7 +275,7 @@ CONTAINER ID   IMAGE                    COMMAND                  CREATED        
 👉 venv 안에 설치돼서가 아니라, 그냥 터미널에서 Docker를 호출한 것입니다.
 
 ---
-DRF 환경셋팅하기
+환경셋팅하기
 
 `mysite/settings.py 설정 추가 (Redis 캐시 + Celery 브로커)`
 ```python
@@ -340,6 +296,69 @@ CELERY_RESULT_SERIALIZER = "json"
 CELERY_TIMEZONE = "Asia/Seoul"
 ```
 	Celery와 Redis가 사용할 ‘설정값’을 Django의 설정 저장소에 정의해둡니다.
+
+settings해석:
+```python
+# ================================
+# Django Redis 캐시 설정
+# ================================
+
+CACHES = {
+    "default": {  
+        # Django가 사용할 기본 캐시 저장소 정의
+
+        "BACKEND": "django_redis.cache.RedisCache",
+        # 캐시 엔진으로 Redis 사용
+        # (django-redis 패키지를 통해 Redis 연결)
+
+        "LOCATION": "redis://127.0.0.1:6379/1",
+        # Redis 서버 위치
+        # 형식: redis://호스트:포트/DB번호
+        # /1 → Redis의 논리 DB 1번 사용 (캐시 전용 공간)
+
+        "OPTIONS": {
+            "CLIENT_CLASS": "django_redis.client.DefaultClient"
+        },
+        # Redis 클라이언트 동작 방식
+        # 대부분 기본값(DefaultClient) 사용
+
+        "TIMEOUT": 60 * 10,
+        # 기본 TTL(Time To Live)
+        # 캐시 데이터가 10분 후 자동 삭제됨
+        # (600초 = 10분)
+    }
+}
+
+
+# ================================
+# Celery + Redis 설정
+# ================================
+
+CELERY_BROKER_URL = "redis://127.0.0.1:6379/2"
+# Celery 브로커 (작업 대기열 저장소)
+# Redis DB 2번 사용
+# .delay()로 등록된 작업들이 여기에 쌓임
+
+CELERY_RESULT_BACKEND = "redis://127.0.0.1:6379/3"
+# Celery 작업 결과 저장소
+# 작업 완료 후 반환값 / 상태 정보 저장
+# Redis DB 3번 사용
+
+CELERY_ACCEPT_CONTENT = ["json"]
+# Celery가 수신할 메시지 형식
+# json만 허용 (보안 + 일관성 목적)
+
+CELERY_TASK_SERIALIZER = "json"
+# 작업 데이터를 어떤 형식으로 직렬화할지 지정
+# json으로 변환하여 Redis에 저장
+
+CELERY_RESULT_SERIALIZER = "json"
+# 작업 결과도 json 형식으로 저장
+
+CELERY_TIMEZONE = "Asia/Seoul"
+# Celery 내부 시간대 설정
+# 스케줄 작업 / 로그 시간 기준
+```
 
 ---
 Celery 연결 파일 만들기
@@ -588,7 +607,6 @@ def analyze_text(text: str) -> dict:
     return result
 
 ```
-
 
 🔹 1) 입력 정리 / 검증
 ```python
@@ -1170,7 +1188,7 @@ def analyze_textitem_task(item_id):
 {% endblock %}
 ```
 
-실행 (중요: 서버 1개 + 워커 1개)
+실행 확인
 터미널1
 ```bash
 python manage.py runserver
@@ -1181,11 +1199,7 @@ python manage.py runserver
 celery -A mysite worker -l info -P solo
 ```
 
-화면 결과: 이렇게 나오면 정상입니다.
-![[Pasted image 20260207203512.png]]
-
-이제 “작업이 실제로 도는지” 테스트하는 방법
-
+화면에서 테스트 하기
 브라우저에서 테스트할 주소는 다음과 같습니다.
 ```
 http://127.0.0.1:8000/predict/  # 동기식 테스트
@@ -1292,10 +1306,10 @@ docker logs redis --tail 50
 
 브라우저 네트워크에서 처리시간 확인하기
 (1) 동기 측정  
-![[Pasted image 20260207212330.png]]
+![[Pasted image 20260218165119.png]]
 ```
-서버 응답을 기다리는 중: 1.81초
-설명(총): 1.81초
+서버 응답을 기다리는 중: 133.88초
+설명(총): 135.68 ms
 ```
 실제 흐름
 ```
@@ -1308,11 +1322,11 @@ POST /predict/
 	모델 추론 시간이 그대로 사용자 대기 시간
 
 (2) 비동기 측정 
-![[Pasted image 20260207212259.png]]
+![[Pasted image 20260218165418.png]]
 
 ```
-서버 응답을 기다리는 중: 4~5 ms
-설명(총): 5.49 ms
+서버 응답을 기다리는 중: 9.75 ms
+설명(총): 11.93 ms
 ```
 실제 흐름
 ```
@@ -1322,15 +1336,31 @@ POST /new/
 → 즉시 redirect 응답
 ```
 
-###### 그래서 이 숫자가 의미하는 것
-| 방식   | 브라우저 대기 시간    |
-| ---- | ------------- |
-| 동기식  | ~1.8초         |
-| 비동기식 | ~0.005초 (5ms) |
-👉 약 360배 차이
+### 그래서 이 숫자가 의미하는 것
 
-성능평가를 이렇게 설명하면 됩니다
-동기 방식은 모델 추론 시간이 그대로 HTTP 응답 시간으로 반영되어 평균 1.8초 이상 소요되었고,  비동기 방식은 요청 등록만 처리하여 평균 5ms 이내로 응답되었습니다.  
-실제 분석은 Celery Worker에서 비동기로 수행됩니다.
+- 동기식 전체 시간 → **135.68 ms**
+- 비동기식 전체 시간 → **11.93 ms**
+
+###### 동기 vs 비동기 성능 비교 표
+|구분|동기식 (Sync API)|비동기식 (Async API)|
+|---|---|---|
+|**브라우저 대기 시간**|135.68 ms|11.93 ms|
+|**응답 시간 성격**|모델 추론 포함|작업 등록만 수행|
+|**서버 처리 내용**|HF 모델 실행|Redis enqueue|
+|**사용자 체감 속도**|상대적으로 느림|매우 빠름|
+
+###### 성능 차이 계산
+```
+135.68 ms ÷ 11.93 ms ≈ 11.37
+```
+
+동기식 API는 모델 추론 시간이 HTTP 응답 시간에 직접 포함되어 평균 약 **135.68ms**의 대기 시간이 발생하였다.  
+반면 비동기식 API는 작업 큐 등록만 수행하고 즉시 응답하므로 평균 약 **11.93ms**로 측정되었다.  
+이는 약 **11.4배의 응답 속도 개선 효과**를 보인다.
+
+|방식|평균 응답 시간|성능 차이|
+|---|---|---|
+|동기식|135.68 ms|기준|
+|비동기식|11.93 ms|**약 11.4배 빠름**|
 
 
