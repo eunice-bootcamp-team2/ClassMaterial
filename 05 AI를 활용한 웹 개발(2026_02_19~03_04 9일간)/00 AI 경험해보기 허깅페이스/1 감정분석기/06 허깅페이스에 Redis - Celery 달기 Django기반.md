@@ -1147,6 +1147,223 @@ def analyze_textitem_task(item_id):
 - 실패 시 재시도가 필요하다
 - “분석중/완료” 같은 상태 관리가 필요하다
 
+### 전체 처리 흐름도
+![[Group 35.png]]
+
+
+
+## **① Docker 실행 (Redis 컨테이너 실행)**
+
+역할
+- Redis 서버 기동
+- Celery 브로커 / Django 캐시 저장소 준비
+
+아직 Django / Celery 로직 없음
+
+---
+## **② Celery Worker 실행**
+
+이미지의 파란 라인 기준
+
+동작 내부 순서:
+1. Celery 프로세스 시작
+2. Django 프로젝트 로딩
+3. settings.py 로딩
+4. mysite/init.py 실행
+5. celery.py 로딩
+6. Redis 브로커 연결
+7. tasks.py 등록
+8. 작업 대기 상태 진입
+
+✔ 이 시점에 Worker는 계속 대기 중
+
+---
+
+## **③ Django runserver 실행**
+
+```bash
+python manage.py runserver
+```
+
+내부 동작 순서:
+1. manage.py실행
+2. settings.py로딩
+3. mysite/init.py 실행
+4. URLConf 로딩
+
+```
+mysite/urls.py
+    → sentiment/urls.py
+        → views.py import
+```
+
+1. View 클래스 메모리 로딩
+2. 서버 대기 상태 진입
+
+✔ 아직 모델 추론 없음
+
+---
+
+## ④ (이미지 상단) 서버 준비 완료 상태
+
+- Django 대기 중
+- Celery Worker 대기 중
+- Redis 대기 중
+
+---
+
+## ⑤ settings.py구성 적용 상태
+
+이미지 좌측 블록 의미:
+- Redis 캐시 설정
+- Celery 브로커 설정
+- Result backend 설정
+
+이미 로딩 완료된 상태
+
+---
+## ⑥ / ⑦ URL + View 연결 완료 상태
+
+- URLConf 등록됨
+- View import 완료됨
+
+---
+
+# 🚀 사용자 동작 시점
+
+---
+
+## **⑧ URL → View 라우팅**
+
+사용자 요청 발생 시
+브라우저 → Django → URL 매칭
+→ TextItemCreateView 선택
+
+---
+## **⑨ 사용자 입력**
+
+입력값:
+```
+나는 오늘 기분이 너무 좋아
+```
+
+POST 요청 발생
+
+---
+
+## ⑩ views.py실행
+
+TextItemCreateView.form_valid()
+
+여기서:
+1. form 데이터 추출
+2. is_analyzing = True
+3. **DB 저장 수행**
+4. pk 생성
+
+---
+
+## **⑪ Celery Task 등록**
+
+```python
+analyze_textitem_task.delay(self.object.id)
+```
+
+의미:
+- Django → Redis Broker 메시지 전달
+
+✔ 추론은 안 함
+
+---
+
+## **⑫ Redis Broker 전달**
+
+Celery Worker에게 작업 전달
+
+---
+
+# 🔥 Celery Worker 영역
+
+---
+
+## ⑬ Worker가 tasks.py실행
+
+```python
+analyze_textitem_task()
+```
+
+여기서:
+1. DB에서 TextItem 조회
+2. services.py호출
+
+---
+
+## **⑭ services.py진입**
+
+```python
+result = analyze_text(item.text)
+```
+
+---
+
+## **⑮ HF pipeline 처리**
+
+services 내부:
+
+1. get_classifier()
+2. 모델 없으면 로딩
+3. 모델 있으면 재사용
+4. 추론 수행
+5. dict(result) 생성
+
+---
+
+## ⑯ services.py→ tasks.py반환
+
+```python
+return {
+"label": ...,
+"score": ...
+}
+```
+
+---
+
+## **⑰ tasks.py→ DB 업데이트**
+
+```python
+item.label = result["label"]
+item.score = result["score"]
+item.is_analyzing =False
+item.save()
+```
+
+✔ 최종 상태 변경
+
+---
+
+# 🖥 화면 반영 단계
+
+---
+
+## **⑱ 화면은 DB 재조회 기반 렌더링**
+
+ListView / DetailView:
+→ DB에서 최신 값 읽음
+→ 템플릿 렌더링
+
+---
+# ✅ 이미지 흐름 핵심 요약
+
+그림 흐름:
+```
+Docker → Celery Worker 준비 → Django 서버 준비
+→ 사용자 요청 → urls → views → DB 저장
+→ Celery task 등록 → Redis Broker
+→ Worker tasks.py 실행 → services.py 추론
+→ DB 업데이트 → 화면은 DB 다시 읽어서 표시
+```
+
 ---
 기존 템플릿에 분석중 표시(선택이지만 추천)
 `sentiment/templates/sentiment/textitem_detail.html` 안에:
