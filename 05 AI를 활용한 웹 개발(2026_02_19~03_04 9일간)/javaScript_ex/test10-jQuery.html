@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>jQuery 카드 만들기</title>
+  <style>
+    .card {
+      padding: 10px;
+      margin: 5px 0;
+      background-color: #f0f0f0;
+      border-radius: 5px;
+    }
+  </style>
+  <!-- jQuery CDN 추가 -->
+  <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+</head>
+<body> 
+  <div><a href="index.html">홈으로</a></div>
+  <h2>카드 만들기</h2>
+  <input type="text" id="textInput" placeholder="내용을 입력하세요">
+  <button id="createBtn">카드 추가</button>
+
+  <div id="cardContainer"></div>
+
+  <script>
+    $(document).ready(function () {
+      $('#createBtn').on('click', function () {
+        const value = $('#textInput').val().trim();
+        if (value === "") return;
+
+        const card = $('<div></div>').addClass('card').text(value);
+        $('#cardContainer').append(card);
+
+        $('#textInput').val(""); // 입력창 초기화
+      });
+    });
+  </script>
+</body>
+</html>

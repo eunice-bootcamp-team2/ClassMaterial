@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>jQuery 비동기 예제</title>
+  <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script> <!-- jQuery CDN -->
+</head>
+<body>
+  <h2>setTimeout 비동기 실행 (jQuery)</h2>
+  <button id="runBtn">실행</button>
+
+  <script>
+    $(document).ready(function () {
+      $('#runBtn').on('click', function () {
+        console.log("1. 시작");
+
+        setTimeout(function () {
+          console.log("2. 2초 후 실행 (비동기)");
+        }, 2000);
+
+        console.log("3. 종료");
+      });
+    });
+  </script>
+</body>
+</html>

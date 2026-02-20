@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html>
+<body>
+
+<h2>숫자: <span id="count">0</span></h2>
+<button id="increaseBtn">증가</button>
+<br>
+<div><a href="index.html">홈으로</a></div>
+<script>
+let count = 0;
+
+document.getElementById("increaseBtn").addEventListener("click", function() {
+  count += 1;
+  document.getElementById("count").textContent = count;
+});
+</script>
+
+</body>
+</html>

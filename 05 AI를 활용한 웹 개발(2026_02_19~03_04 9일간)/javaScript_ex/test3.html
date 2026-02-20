@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html>
+<body>
+
+<form id="loginForm">
+  <input type="text" id="username" placeholder="이름 입력">
+  <button type="submit">제출</button>
+</form>
+<br>
+<div><a href="index.html">홈으로</a></div>
+<script>
+document.getElementById("loginForm").addEventListener("submit", function (e) {
+  e.preventDefault(); // 페이지 새로고침 막기
+  const name = document.getElementById("username").value;
+  alert("입력한 이름: " + name);
+});
+</script>
+
+</body>
+</html> 
