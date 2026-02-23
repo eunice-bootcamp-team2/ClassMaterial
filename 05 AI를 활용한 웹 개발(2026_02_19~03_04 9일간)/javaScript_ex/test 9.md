@@ -1,0 +1,33 @@
+```html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Document</title>
+</head>
+<body>  
+    <div><a href="index.html">홈으로</a></div>
+
+    <h2>목록 추가</h2>
+    <button id="addBtn">+ 아이템 추가</button>
+    <ul id="itemList"></ul>
+
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+
+    const addBtn = document.getElementById("addBtn");
+    const itemList = document.getElementById("itemList");
+
+    addBtn.addEventListener("click", function () {
+        const li = document.createElement("li");
+        li.textContent = "새로운 항목";
+        itemList.appendChild(li);
+    });
+
+});
+</script>
+
+</body>
+</html>
+```

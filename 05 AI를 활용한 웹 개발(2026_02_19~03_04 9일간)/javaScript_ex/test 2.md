@@ -1,0 +1,25 @@
+```html
+<!DOCTYPE html>
+<html>
+<body>
+
+<input type="text" id="keyBox" placeholder="키를 눌러보세요">
+
+<br>
+<div><a href="index.html">홈으로</a></div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+
+  const keyBox = document.getElementById("keyBox");
+
+  keyBox.addEventListener("keydown", function (event) {
+    console.log("누른 키:", event.key);
+  });
+
+});
+</script>
+
+</body>
+</html>
+```
