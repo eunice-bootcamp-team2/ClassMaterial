@@ -1,3 +1,24 @@
+머신러닝 기본 구조
+```
+데이터 준비 → Train/Test 분리 → 모델 학습 → 평가 → 저장 → 서빙
+```
+
+HF 파인튜닝 기본 구조
+```
+데이터셋 로드 → Tokenizer 적용 → Train/Validation 분리 → Trainer 학습 → Metric 평가 → 저장 → 추론
+```
+
+###### HF 파인튜닝
+| Scikit-Learn | Hugging Face              |
+| ------------ | ------------------------- |
+| 숫자 Feature   | Tokenizer / Text / Image  |
+| fit()        | Trainer / backpropagation |
+| 작은 모델        | 거대한 사전학습 모델               |
+| CPU 중심       | GPU / VRAM 고려             |
+| 즉시 학습        | 학습 비용 큼                   |
+ML 원리 = 동일
+허깅페이스에서는 딥러닝 학습 mechanics 됩니다.
+
 ### Scikit-Learn이란?
 	기계 학습(Machine Learning)을 쉽게 할 수 있도록 도와주는 파이썬 라이브러리입니다. 
 
