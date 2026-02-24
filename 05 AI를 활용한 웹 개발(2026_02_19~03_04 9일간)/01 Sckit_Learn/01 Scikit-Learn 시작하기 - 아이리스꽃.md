@@ -406,8 +406,12 @@ print("\n✅ saved: iris_dt_model.pkl")
 ---
 저장이 잘 됐는지 바로 테스트
 ```python
-loaded_model = joblib.load("iris_dt_model.pkl")
-loaded_model.predict(iris.data[:1])
+artifact = joblib.load("iris_dt_model.pkl")
+print(type(artifact)) 
+print(artifact.keys()) 
+
+final_model = artifact["model"]
+final_model.predict(iris.data[:1])
 ```
 ✔ 에러 없으면 저장 성공  
 ✔ 이 파일을 DRF로 가져갈 겁니다
@@ -615,8 +619,11 @@ class IrisPredictAPIView(APIView):
         # get_model() 호출 시:
         # - 최초 1회만 pkl 로드
         # - 이후 메모리 캐시 모델 재사용
+        
         model = get_model()
-
+        # artifact = get_model()  
+		# model = artifact["model"]
+		
 
         # -------------------------------------------------
         # 4️⃣ 예측 수행 (추론 단계)
