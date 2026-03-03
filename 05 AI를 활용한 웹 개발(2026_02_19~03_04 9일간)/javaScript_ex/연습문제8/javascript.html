@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <title>Modal Practice (JS)</title>
+  <style>
+    body{font-family:system-ui;padding:24px;max-width:700px;margin:auto}
+    h2{text-align:center}
+    button{padding:10px 12px;cursor:pointer}
+    .muted{color:#666;font-size:14px;text-align:center;margin-top:8px}
+
+    .overlay{
+      position:fixed; inset:0;
+      display:none;
+      background:rgba(0,0,0,.45);
+      align-items:center; justify-content:center;
+      padding:18px;
+    }
+    .overlay.show{display:flex}
+    .modal{
+      width:min(520px, 100%);
+      background:#fff;
+      border-radius:16px;
+      padding:16px;
+      box-shadow:0 12px 30px rgba(0,0,0,.2);
+    }
+    .modalHeader{display:flex;justify-content:space-between;align-items:center;gap:10px}
+    .modalHeader h3{margin:0;font-size:18px}
+    .closeBtn{border:1px solid #eee;border-radius:12px;background:#fafafa}
+    .content{margin-top:10px;line-height:1.6}
+    .row{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+    input{flex:1;min-width:220px;padding:10px}
+    .pill{display:inline-block;border:1px solid #eee;border-radius:999px;padding:6px 10px;margin-top:10px}
+  </style>
+</head>
+<body>
+  <h2>🪟 Modal Practice (JS)</h2>
+  <div style="text-align:center">
+    <button id="openBtn">모달 열기</button>
+  </div>
+  <div class="muted">기능: ESC로 닫기 / 바깥 클릭 닫기 / 열리면 스크롤 잠금</div>
+
+  <div id="overlay" class="overlay" aria-hidden="true">
+    <div class="modal" role="dialog" aria-modal="true">
+      <div class="modalHeader">
+        <h3>간단 입력 모달</h3>
+        <button id="closeBtn" class="closeBtn">닫기</button>
+      </div>
+
+      <div class="content">
+        아래에 텍스트를 입력하고 저장하면, 모달 안에 “저장됨” 표시가 바뀝니다.
+        <div class="row">
+          <input id="nameInput" placeholder="예: Eunice" />
+          <button id="saveBtn">저장</button>
+        </div>
+        <div id="saved" class="pill">저장됨: (없음)</div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const openBtn = document.getElementById("openBtn");
+    const overlay = document.getElementById("overlay");
+    const closeBtn = document.getElementById("closeBtn");
+    const saveBtn = document.getElementById("saveBtn");
+    const nameInput = document.getElementById("nameInput");
+    const saved = document.getElementById("saved");
+
+    function lockScroll(lock){
+      document.body.style.overflow = lock ? "hidden" : "";
+    }
+
+    function openModal(){
+      overlay.classList.add("show");
+      overlay.setAttribute("aria-hidden", "false");
+      lockScroll(true);
+      nameInput.focus();
+    }
+
+    function closeModal(){
+      overlay.classList.remove("show");
+      overlay.setAttribute("aria-hidden", "true");
+      lockScroll(false);
+    }
+
+    openBtn.addEventListener("click", openModal);
+    closeBtn.addEventListener("click", closeModal);
+
+    // 바깥 클릭 닫기 (오버레이 클릭 시)
+    overlay.addEventListener("click", (e) => {
+      if (e.target === overlay) closeModal();
+    });
+
+    // ESC 닫기
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape" && overlay.classList.contains("show")) {
+        closeModal();
+      }
+    });
+
+    saveBtn.addEventListener("click", () => {
+      const v = nameInput.value.trim();
+      saved.textContent = `저장됨: ${v || "(없음)"}`;
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <title>점심메뉴 추천기</title>
+  <style>
+    body { font-family: sans-serif; padding: 40px; text-align: center; }
+    input { padding: 10px; width: 250px; font-size: 16px; }
+    button { padding: 10px 14px; margin-left: 8px; cursor: pointer; }
+    .card { margin-top: 30px; padding: 20px; border-radius: 14px; border: 1px solid #ddd; font-size: 22px; transition: .3s; }
+  </style>
+</head>
+<body>
+  <h2>🍽️ 오늘의 점심 추천</h2>
+  <input id="nameInput" placeholder="이름 입력" />
+  <button id="genBtn">추천</button>
+
+  <div id="resultCard" class="card">결과 표시 영역</div>
+
+  <script>
+    const menus = ["김치찌개", "제육볶음", "돈까스", "초밥", "샌드위치", "쌀국수"];
+    const emojis = ["🍜", "🍱", "🥪", "🍛", "🍣", "🍗"];
+    const colors = ["#ff7675", "#74b9ff", "#55efc4", "#ffeaa7", "#a29bfe"];
+
+    const input = document.getElementById("nameInput");
+    const button = document.getElementById("genBtn");
+    const card = document.getElementById("resultCard");
+
+    function pick(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
+
+    function recommendLunch() {
+      const name = input.value.trim();
+      if (!name) {
+        card.innerText = "이름을 먼저 입력하세요";
+        return;
+      }
+      const menu = `${pick(menus)} ${pick(emojis)}`;
+      card.innerText = `${name}님 오늘의 점심: ${menu}`;
+      card.style.backgroundColor = pick(colors);
+    }
+
+    button.addEventListener("click", () => recommendLunch());
+    input.addEventListener("keydown", (e) => { if (e.key === "Enter") recommendLunch(); });
+  </script>
+</body>
+</html>

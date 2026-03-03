@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <title>Mini Timer (jQuery)</title>
+  <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+  <style>
+    body{font-family:system-ui;padding:24px;max-width:520px;margin:auto;text-align:center}
+    .row{display:flex;gap:8px;justify-content:center;align-items:center}
+    input{width:120px;padding:10px;text-align:center}
+    button{padding:10px 12px;cursor:pointer}
+    .screen{margin-top:18px;font-size:44px;border:1px solid #ddd;border-radius:14px;padding:18px}
+    .muted{color:#666;font-size:14px;margin-top:10px}
+  </style>
+</head>
+<body>
+  <h2>⏱️ Mini Timer (jQuery)</h2>
+
+  <div class="row">
+    <input id="secInput" type="number" min="1" placeholder="초 입력" />
+    <button id="startBtn">시작</button>
+    <button id="pauseBtn">일시정지</button>
+    <button id="resetBtn">리셋</button>
+  </div>
+
+  <div id="screen" class="screen">0</div>
+  <div id="msg" class="muted"></div>
+
+  <script>
+    let timerId = null;
+    let remaining = 0;
+    let initial = 0;
+
+    function render() {
+      $("#screen").text(remaining);
+    }
+
+    function start() {
+      if (timerId) return;
+
+      if (remaining === 0) {
+        const v = Number($("#secInput").val());
+        if (!v || v < 1) {
+          $("#msg").text("⚠️ 1 이상 숫자를 입력하세요.");
+          return;
+        }
+        $("#msg").text("");
+        initial = v;
+        remaining = v;
+        render();
+      }
+
+      timerId = setInterval(() => {
+        remaining -= 1;
+        render();
+
+        if (remaining <= 0) {
+          remaining = 0;
+          render();
+          $("#msg").text("✅ 끝!");
+          clearInterval(timerId);
+          timerId = null;
+        }
+      }, 1000);
+    }
+
+    function pause() {
+      if (!timerId) return;
+      clearInterval(timerId);
+      timerId = null;
+      $("#msg").text("⏸️ 일시정지");
+    }
+
+    function reset() {
+      clearInterval(timerId);
+      timerId = null;
+
+      const v = Number($("#secInput").val());
+      if (v && v >= 1) initial = v;
+
+      remaining = initial || 0;
+      $("#msg").text("🔄 리셋됨");
+      render();
+    }
+
+    $("#startBtn").on("click", start);
+    $("#pauseBtn").on("click", pause);
+    $("#resetBtn").on("click", reset);
+  </script>
+</body>
+</html>

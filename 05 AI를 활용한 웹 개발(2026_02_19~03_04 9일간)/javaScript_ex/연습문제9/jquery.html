@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <title>Inline Editor List (jQuery)</title>
+  <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+  <style>
+    body{font-family:system-ui;padding:24px;max-width:720px;margin:auto}
+    h2{text-align:center}
+    .row{display:flex;gap:8px;justify-content:center;flex-wrap:wrap}
+    input{flex:1;min-width:240px;padding:10px}
+    button{padding:10px 12px;cursor:pointer}
+    .card{margin-top:14px;border:1px solid #eee;border-radius:14px;padding:14px}
+    .muted{color:#666;font-size:14px;min-height:18px}
+    ul{margin:0;padding-left:0;list-style:none}
+    li{display:flex;gap:8px;align-items:center;padding:10px;border-bottom:1px solid #f2f2f2}
+    li:last-child{border-bottom:0}
+    .text{flex:1}
+    .tag{font-size:12px;color:#666;border:1px solid #eee;border-radius:999px;padding:4px 8px}
+    .danger{border:1px solid #f1c7c7;background:#fff5f5;border-radius:10px;padding:6px 10px}
+  </style>
+</head>
+<body>
+  <h2>✏️ Inline Editor List (jQuery)</h2>
+
+  <div class="row">
+    <input id="newInput" placeholder="항목 입력 후 추가 (Enter 가능)" />
+    <button id="addBtn">추가</button>
+  </div>
+
+  <div class="card">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
+      <div id="msg" class="muted"></div>
+      <div class="tag">규칙: 편집은 항상 1개만</div>
+    </div>
+    <ul id="list"></ul>
+  </div>
+
+  <script>
+    let items = [];
+    let editingId = null;
+
+    function setMsg(text, isError=false){
+      $("#msg").text(text || "").toggleClass("danger", !!isError).addClass("muted");
+    }
+
+    function render(){
+      $("#list").empty();
+
+      items.forEach(it => {
+        const $li = $("<li/>");
+
+        if (editingId === it.id){
+          const $editInput = $("<input/>").val(it.text).css({flex:"1", padding:"10px"});
+          const $saveBtn = $("<button/>", {text:"저장"});
+          const $cancelBtn = $("<button/>", {text:"취소"});
+
+          function save(){
+            const v = $editInput.val().trim();
+            if (!v){
+              setMsg("⚠️ 빈 값은 저장할 수 없습니다.", true);
+              $editInput.focus();
+              return;
+            }
+            it.text = v;
+            editingId = null;
+            setMsg("✅ 저장됨");
+            render();
+          }
+
+          $saveBtn.on("click", save);
+          $cancelBtn.on("click", () => {
+            editingId = null;
+            setMsg("취소됨");
+            render();
+          });
+
+          $editInput.on("keydown", (e) => {
+            if (e.key === "Enter") save();
+            if (e.key === "Escape") {
+              editingId = null;
+              setMsg("취소됨");
+              render();
+            }
+          });
+
+          $li.append($editInput, $saveBtn, $cancelBtn).appendTo("#list");
+          setTimeout(() => $editInput.focus(), 0);
+          return;
+        }
+
+        const $span = $("<span/>", {class:"text", text:it.text});
+        const $editBtn = $("<button/>", {text:"수정"}).on("click", () => {
+          if (editingId && editingId !== it.id){
+            setMsg("⚠️ 다른 항목 편집을 먼저 저장/취소하세요.", true);
+            return;
+          }
+          editingId = it.id;
+          setMsg("");
+          render();
+        });
+
+        const $delBtn = $("<button/>", {text:"삭제"}).on("click", () => {
+          if (editingId === it.id){
+            setMsg("⚠️ 편집중인 항목은 먼저 취소/저장 후 삭제하세요.", true);
+            return;
+          }
+          items = items.filter(x => x.id !== it.id);
+          setMsg("🗑️ 삭제됨");
+          render();
+        });
+
+        $li.append($span, $editBtn, $delBtn).appendTo("#list");
+      });
+    }
+
+    function addItem(){
+      const v = $("#newInput").val().trim();
+      if (!v){
+        setMsg("⚠️ 내용을 입력하세요.", true);
+        return;
+      }
+      if (editingId){
+        setMsg("⚠️ 편집중인 항목을 먼저 저장/취소하세요.", true);
+        return;
+      }
+      items.unshift({ id: crypto.randomUUID(), text: v });
+      $("#newInput").val("").focus();
+      setMsg("➕ 추가됨");
+      render();
+    }
+
+    $("#addBtn").on("click", addItem);
+    $("#newInput").on("keydown", (e) => {
+      if (e.key === "Enter") addItem();
+    });
+
+    items = [
+      {id: crypto.randomUUID(), text:"DRF Todo 리팩토링"},
+      {id: crypto.randomUUID(), text:"리뷰 감정분석 API 연결"},
+      {id: crypto.randomUUID(), text:"Redis/Celery 붙이기"},
+    ];
+    render();
+  </script>
+</body>
+</html>
