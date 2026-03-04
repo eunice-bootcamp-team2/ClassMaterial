@@ -1,4 +1,23 @@
+CRUD API를 각각 따로 만들었습니다.
+즉 기능마다 클래스가 하나씩 존재합니다.
+```
+TodoListAPI  
+TodoCreateAPI  
+TodoRetrieveAPI  
+TodoUpdateAPI  
+TodoDeleteAPI
+```
 
+| 기능  | 클래스             | URL           |
+| --- | --------------- | ------------- |
+| 목록  | TodoListAPI     | /api/list     |
+| 생성  | TodoCreateAPI   | /api/create   |
+| 조회  | TodoRetrieveAPI | /api/retrieve |
+| 수정  | TodoUpdateAPI   | /api/update   |
+| 삭제  | TodoDeleteAPI   | /api/delete   |
+CRUD가 전부 분리된 구조
+
+---
 `todo > urls.py`
 ```python
 from django.urls import path
@@ -43,7 +62,8 @@ class TodoListGenericView(ListView): # 제너릭뷰
 from rest_framework.serializers import ModelSerializer
 from .models import Todo
 
-class TodoSerializer(ModelSerializer):
+# API 요청 데이터를 모델 객체로 변환하는 변환기
+class TodoSerializer(ModelSerializer): 
 	class Meta:
 		model = Todo
 		fields = "__all__" # 모델의 모든 필드를 자동으로 직렬화합니다.
@@ -67,6 +87,50 @@ class TodoSerializer(ModelSerializer):
 # 둘중 한개를 사용합니다.
 ```
 
+Serializer TodoSerializer 클래스의 역할
+- 첫번째 역할: 모델 ↔ JSON 변환기 -> 이 클래스 자체가 변환기입니다.
+- 두번째 역할: 데이터 검증기 -> 데이터 검사기
+```
+{  
+	"exp":"abc"  
+}
+이런 요청이 들어오면
+exp는 IntegerField이므로 오류 발생을 시킵니다.
+```
+
+- 세번째 역할: API 데이터 구조 정의
+```
+fields = [
+    "name",
+    "description",
+    "complete",
+    "exp",
+    "completed_at",
+    "created_at",
+    "updated_at"
+]
+fields는 Serializer에서 사용할 모델 필드를 정의하는 것입니다.  
+즉 API에서 사용할 데이터 구조를 정의합니다.  
+이 필드는  
+- Model → JSON 응답 생성  
+- JSON → Model 데이터 검증 및 저장  
+두 과정 모두에서 사용됩니다.
+
+Json에서 이런 데이터가 넘어옵니다.
+{
+  "name": "운동",
+  "description": "스쿼트 50회",
+  "complete": false,
+  "exp": 10,
+  "completed_at": null,
+  "created_at": "2026-03-04T10:15:30Z",
+  "updated_at": "2026-03-04T10:15:30Z"
+}
+```
+	
+- read_only_fields의 역할 : 이건 읽기만 가능 즉 ✔ 응답에는 포함됨, ❌ 요청으로 수정 불가
+
+---
 Serializer Meta 옵션의 기본 개념
 Serializer의 `Meta` 클래스는 모델의 어떤 필드를 JSON으로 변환할지 정하는 설정 공간입니다.
 
@@ -145,7 +209,7 @@ REST_FRAMEWORK = {
 }
 ```
 	DRF 브라우저용 HTML(Browsable API) 화면을 끄고, 무조건 JSON만 응답하게 만드는 옵션
-- 필수 아님. DRF는 기본 설정으로도 Insomnia에 **JSON 잘 반환**합니다.
+- 필수 아님. DRF는 기본 설정으로도 Insomnia에 JSON 잘 반환합니다.
 - 해두면 좋은 경우: API 서버만 쓸 거고(React/모바일), 브라우저에서 예쁜 DRF 화면 필요 없을 때.
 
 `todo/views.py`
@@ -154,11 +218,19 @@ from django.urls import reverse_lazy
 
 # 목록 조회
 class TodoListView(ListView):
-  model = Todo
-  template_name = "todo/list.html"
-  context_object_name = "todos"
-  ordering = ['-created_at']
-  success_url = reverse_lazy('todo:list')
+    model = Todo  # 이 뷰가 사용할 모델 지정 (Todo 테이블 데이터를 조회)
+
+    template_name = "todo/list.html"  
+    # 데이터를 보여줄 HTML 템플릿 파일 지정
+
+    context_object_name = "todos"  
+    # 템플릿에서 사용할 변수 이름 (기본값 object_list 대신 todos 사용)
+
+    ordering = ['-created_at']  
+    # 데이터 정렬 방식 (created_at 기준 내림차순 → 최신 글이 먼저)
+
+    success_url = reverse_lazy('todo:list')  
+    # 작업 성공 후 이동할 URL (ListView에서는 보통 사용하지 않지만 설정 가능)
 ```
 
 `templates/base.html`
@@ -283,10 +355,18 @@ from ..serializers import TodoSerializer # 경로변경
 
 # 전체보기
 class TodoListAPI(APIView):
-	def get(self, request):
-		todos = Todo.objects.all() 
-		serializer = TodoSerializer(todos, many=True)
-		return Response(serializer.data)
+    def get(self, request):  
+        # GET 요청이 들어오면 실행되는 함수
+
+        todos = Todo.objects.all()  
+        # Todo 모델의 모든 데이터 조회 (QuerySet)
+
+        serializer = TodoSerializer(todos, many=True)  
+        # 조회한 Todo 객체들을 Serializer로 JSON 변환 준비
+        # many=True → 여러 개의 객체를 변환한다는 의미
+
+        return Response(serializer.data)  
+        # serializer.data를 JSON 형태로 변환하여 API 응답으로 반환
 ```
 /todo/list/  전체 Todo 목록 조회
 `http://127.0.0.1:8000/todo/api/list/`
@@ -326,22 +406,44 @@ from django.views.generic import ListView, CreateView
 
 # 생성
 class TodoCreateView(CreateView):
-    model = Todo
-    fields = ['name', 'description', 'complete', 'exp']
-    template_name = "todo/create.html"
-    success_url = reverse_lazy('todo:list')
+    model = Todo  
+    # 이 뷰에서 사용할 모델 (Todo 테이블에 데이터 생성)
+
+    fields = ['name', 'description', 'complete', 'exp']  
+    # HTML form에서 입력받을 모델 필드 정의
+
+    template_name = "todo/create.html"  
+    # Todo 생성 화면에 사용할 템플릿 파일
+
+    success_url = reverse_lazy('todo:list')  
+    # 생성이 성공하면 이동할 URL (todo 목록 페이지)
 ```
 
 `todo/api_views.py`
 ```python
 # 생성하기
+# 생성하기
 class TodoCreateAPI(APIView):
-	def post(self, request):
-		serializer = TodoSerializer(data=request.data)
-		serializer.is_valid(raise_exception=True)
-		todo = serializer.save()
-		return Response(TodoSerializer(todo).data,
-		status=status.HTTP_201_CREATED)
+
+    def post(self, request):
+        # POST 요청이 들어오면 실행되는 함수 (데이터 생성 요청)
+
+        serializer = TodoSerializer(data=request.data)
+        # 요청(request)으로 들어온 JSON 데이터를 Serializer에 전달
+
+        serializer.is_valid(raise_exception=True)
+        # 데이터 유효성 검사 수행
+        # 잘못된 데이터가 있으면 자동으로 400 에러 발생
+
+        todo = serializer.save()
+        # 검증된 데이터를 Todo 모델에 저장 (DB에 새로운 데이터 생성)
+
+        return Response(
+            TodoSerializer(todo).data,
+            status=status.HTTP_201_CREATED
+        )
+        # 생성된 Todo 객체를 다시 Serializer로 JSON 변환 후 응답
+        # HTTP 상태코드 201 (생성 성공)
 ```
 
 ```json
@@ -390,10 +492,14 @@ blank 옵션 기준
 글쓰기 생성
 `templates/list.html` 클릭해서 create.html로 이동할수 있도록 클릭이벤트를 수정합니다.
 ```js
-document.getElementById("createBtn").addEventListener
-("click", () => {
-    window.location.href = "/todo/create/"; 
-    console.log("createBtn click")
+document.getElementById("createBtn").addEventListener(  
+"click", () => {  
+  
+window.location.href = "/todo/create/";  
+// createBtn 버튼을 클릭하면 Todo 생성 페이지로 이동  
+  
+console.log("createBtn click");  
+// 버튼 클릭이 발생했는지 확인하기 위한 콘솔 출력  
 });
 ```
 
@@ -439,45 +545,69 @@ document.getElementById("createBtn").addEventListener
 글을 생성할수 있게 자바스크립트를 수정합니다.
 ```js
 <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+<!-- axios 라이브러리 CDN 로드 (HTTP 요청을 쉽게 보내기 위한 라이브러리) -->
 
 <script>
 const api = axios.create({
-  baseURL: "/",
+  baseURL: "/", 
+  // 모든 API 요청의 기본 URL
+
   headers: {
     "Content-Type": "application/json",
+    // 서버로 보낼 데이터 형식 지정 (JSON)
   }
 });
 
 // CSRF 자동 주입 (Django 필수)
 api.interceptors.request.use(config => {
+
   const csrfToken = document.cookie
     .split("; ")
     .find(row => row.startsWith("csrftoken"))
     ?.split("=")[1];
+  // 브라우저 쿠키에서 csrftoken 값을 찾기
 
   if (csrfToken) {
     config.headers["X-CSRFToken"] = csrfToken;
+    // Django가 요구하는 CSRF 토큰을 요청 헤더에 자동 추가
   }
 
   return config;
+  // 수정된 요청 설정 반환
 });
 
+
 document.getElementById("todoCreate").addEventListener("click", async () => {
-  try {
+  // todoCreate 버튼 클릭 시 실행
+
+  try { // 에러가 발생할 수 있는 코드를 실행하는 영역
+
     const res = await api.post("todo/api/create/", {
+      // Todo 생성 API로 POST 요청 전송
+      // 비동기 작업이 끝날 때까지 기다림, 서버 응답이 올 때까지 기다린 후 다음 코드 실행
+
       name: document.getElementById("name").value,
+      // 입력한 Todo 이름
+
       description: document.getElementById("description").value,
+      // 입력한 설명
+
       complete: document.getElementById("complete").checked,
+      // 체크박스 상태 (true / false)
+
       exp: Number(document.getElementById("exp").value || 0)
+      // 경험치 입력값 (숫자로 변환, 없으면 0)
     });
 
     console.log(res.data);
-    
-    // ✅ 글 저장후 메인페이지도 이동 
-	window.location.href = "/todo/list/";
+    // 서버에서 받은 응답 데이터 출력
 
-  } catch (err) {
+    // 글 저장 후 메인페이지 이동
+    window.location.href = "/todo/list/";
+
+  } catch (err) { // 에러가 발생했을 때 처리하는 영역
     console.error(err.response?.data || err.message);
+    // 에러 발생 시 콘솔에 에러 출력
   }
 });
 </script>
@@ -485,10 +615,18 @@ document.getElementById("todoCreate").addEventListener("click", async () => {
 
 자바스크립트의 아래 코드가
 ```js
-      name: document.getElementById("name").value,
-      description: document.getElementById("description").value,
-      complete: document.getElementById("complete").checked,
-      exp: Number(document.getElementById("exp").value || 0)
+name: document.getElementById("name").value,
+// id가 "name"인 입력칸의 값을 가져와서 name 필드에 저장
+
+description: document.getElementById("description").value,
+// id가 "description"인 입력칸의 값을 가져와서 description 필드에 저장
+
+complete: document.getElementById("complete").checked,
+// id가 "complete"인 체크박스의 체크 상태(true / false)를 가져와서 complete에 저장
+
+exp: Number(document.getElementById("exp").value || 0)
+// id가 "exp"인 입력값을 숫자로 변환
+// 값이 비어있으면(빈 문자열) 0으로 처리
 ```
 
 이런 JSON을 만들어냅니다.
@@ -526,30 +664,49 @@ path("api/retrieve/<int:pk>/", TodoRetrieveAPI.as_view(), name="todo_api_retriev
 ```python
 # 상세보기
 class TodoDetailView(DetailView):
-    model = Todo
-    template_name = "todo/detail.html"
-    context_object_name = "todo"
+    model = Todo  
+    # 이 뷰에서 사용할 모델 지정 (Todo 테이블의 특정 데이터 조회)
+
+    template_name = "todo/detail.html"  
+    # 조회한 데이터를 보여줄 HTML 템플릿 파일
+
+    context_object_name = "todo"  
+    # 템플릿에서 사용할 변수 이름
+    # 기본값 object 대신 todo라는 이름으로 전달됨
 ```
 
 `todo/views/api_views.py`
 ```python
-from django.views.generic import DetailView # 추가
+from django.views.generic import DetailView  
+# Django에서 상세 페이지를 만들 때 사용하는 제네릭 뷰
 
-# 상세보기
+# 상세보기 API
 class TodoRetrieveAPI(APIView):
+
     def get(self, request, pk):
+        # GET 요청이 들어오면 실행되는 함수
+        # pk는 URL에서 전달된 Todo의 기본키(id)
 
         try:
             todo = Todo.objects.get(pk=pk)
+            # pk 값에 해당하는 Todo 데이터를 DB에서 조회
 
         except Todo.DoesNotExist:
+            # 해당 pk의 Todo가 존재하지 않을 경우 실행
+
             return Response(
                 {"error": "해당하는 todo가 없습니다."},
+                # 에러 메시지를 JSON 형태로 반환
+
                 status=status.HTTP_404_NOT_FOUND
+                # HTTP 상태코드 404 (데이터 없음)
             )
 
         serializer = TodoSerializer(todo)
+        # 조회한 Todo 객체를 Serializer로 JSON 변환 준비
+
         return Response(serializer.data)
+        # 변환된 데이터를 JSON 응답으로 반환
 ```
 
 `templates/todo/detail.html`
@@ -582,25 +739,38 @@ list.html에서 작성한 리스트글을 클릭하면 상세페이지로 이동
 ```html
 <script>
   document.addEventListener("DOMContentLoaded", function () {
+    // HTML 문서가 모두 로드된 후 실행되는 코드
+
     console.log("create loading");
+    // 페이지가 정상적으로 로드되었는지 확인하는 콘솔 출력
     
-    // 모든 리스트의 클래스를 호출하여
+    // class가 "todo-item"인 모든 요소들을 선택
     const items = document.querySelectorAll(".todo-item");
 
-	// for문과 같은 forEach로 데이터를 모두 돌린뒤
+    // 선택된 요소들을 하나씩 반복 처리
     items.forEach(item => {
-        // 클릭이벤트로 상세페이지의 pk로 이동시킨다.
+
+        // 각 todo-item에 클릭 이벤트 추가
         item.addEventListener("click", () => {
+
             const todoId = item.dataset.id;
+            // HTML의 data-id 속성 값을 가져옴 (todo의 pk 값)
+
             window.location.href = `/todo/detail/${todoId}/`;
+            // 해당 pk를 사용하여 상세 페이지로 이동
         });
     });
 		  
-	document.getElementById("createBtn").addEventListener
-	("click", () => {
-		window.location.href = "/todo/create/";
-		console.log("createBtn click")
-	});
+    document.getElementById("createBtn").addEventListener("click", () => {
+        // id가 createBtn인 버튼 클릭 이벤트
+
+        window.location.href = "/todo/create/";
+        // Todo 생성 페이지로 이동
+
+        console.log("createBtn click");
+        // 버튼 클릭 확인용 콘솔 출력
+    });
+
 });
 </script>
 ```
@@ -635,37 +805,75 @@ pk를 가진 상세페이지로 이동시킨 결과
 
 `todo/views/api_view.py`
 ```python
-# 수정하기
+# 수정하기 API
 class TodoUpdateAPI(APIView):
+
     def put(self, request, pk):
+        # PUT 요청 → 전체 수정 (모든 필드를 다시 보내야 함)
+
         try:
             todo = Todo.objects.get(pk=pk)
+            # pk에 해당하는 Todo 데이터 조회
+
         except Todo.DoesNotExist:
+            # 해당 Todo가 존재하지 않을 경우
+
             return Response(
                 {"error": "해당하는 todo가 없습니다."},
+                # 에러 메시지를 JSON 형태로 반환
+
                 status=status.HTTP_404_NOT_FOUND
+                # HTTP 상태코드 404 반환
             )
 
         serializer = TodoSerializer(todo, data=request.data)
+        # 기존 Todo 객체 + 요청 데이터(request.data)를 Serializer에 전달
+        # 전체 데이터를 기준으로 수정
+
         serializer.is_valid(raise_exception=True)
+        # 데이터 유효성 검사 (문제 있으면 400 에러 발생)
+
         todo = serializer.save()
+        # 검증된 데이터로 Todo 객체 업데이트
+
         serializer = TodoSerializer(todo)
+        # 수정된 Todo 객체를 다시 Serializer로 변환
+
         return Response(serializer.data)
+        # 수정된 데이터를 JSON 형태로 응답
+
+
 
     def patch(self, request, pk):
+        # PATCH 요청 → 부분 수정 (일부 필드만 수정 가능)
+
         try:
             todo = Todo.objects.get(pk=pk)
+            # pk에 해당하는 Todo 데이터 조회
+
         except Todo.DoesNotExist:
+            # 해당 Todo가 존재하지 않을 경우
+
             return Response(
                 {"error": "해당하는 todo가 없습니다."},
                 status=status.HTTP_404_NOT_FOUND
+                # HTTP 상태코드 404 반환
             )
 
         serializer = TodoSerializer(todo, data=request.data, partial=True)
+        # partial=True → 일부 필드만 보내도 수정 가능
+
         serializer.is_valid(raise_exception=True)
+        # 데이터 유효성 검사
+
         todo = serializer.save()
+        # 수정된 데이터 DB 저장
+
         serializer = TodoSerializer(todo)
+        # 수정된 객체를 JSON 변환
+
         return Response(serializer.data)
+        # 수정된 데이터 응답
 ```
 
 `todo/urls.py`
@@ -696,15 +904,27 @@ update 수정하기 api가 잘 구동되는지 Insomnia로 테스트 합니다.
 
 `todo/templates_views.py`
 ```python
-from django.views.generic import UpdateView # 추가
+from django.views.generic import UpdateView  
+# Django에서 데이터 수정 화면을 만들 때 사용하는 제네릭 뷰
 
-# 수정하기
+# 수정하기 화면(View)
 class TodoUpdateView(UpdateView):
     model = Todo
+    # 수정할 대상 모델 (Todo 테이블의 데이터를 수정)
+
     fields = ['name', 'description', 'complete', 'exp']
+    # 수정할 때 사용할 모델 필드
+    # 이 필드들을 기반으로 HTML form이 자동 생성됨
+
     template_name = "todo/update.html"
+    # 수정 화면에 사용할 HTML 템플릿 파일
+
     context_object_name = "todo"
+    # 템플릿에서 사용할 변수 이름
+    # 기본값 object 대신 todo로 전달됨
+
     success_url = reverse_lazy('todo:list')
+    # 수정이 성공하면 이동할 URL (todo 목록 페이지)
 ```
 
 `todo/urls.py`
@@ -718,15 +938,23 @@ detail.html : 수정 버튼 클릭 시 update로 이동
 ```html
 <script>
 document.addEventListener("DOMContentLoaded", () => {
-  const todoId = "{{ todo.id }}";
+  // HTML 문서가 모두 로드된 후 실행되는 코드
 
-  // 수정 버튼	
+  const todoId = "{{ todo.id }}";
+  // Django 템플릿에서 전달된 todo의 id(pk)를 JavaScript 변수에 저장
+
+  // 수정 버튼
   const updateBtn = document.querySelector(".todoUpdate");
+  // class가 "todoUpdate"인 수정 버튼 요소 선택
+
   updateBtn.addEventListener("click", () => {
+    // 수정 버튼 클릭 이벤트
+
     window.location.href = `/todo/update/${todoId}/`;
+    // 해당 todo의 수정 페이지로 이동
   });
 
-  // 삭제는 나중에 연결 (원하면 DeleteView도 같이 만들어줄게)
+  // 삭제는 나중에 연결 (DeleteView 또는 API와 연결 예정)
 });
 </script>
 ```
@@ -768,42 +996,69 @@ document.addEventListener("DOMContentLoaded", () => {
 <script>
 const api = axios.create({
   baseURL: "/",
-  // ✅ Content-Type 제거: FormData는 axios가 자동으로 multipart 설정
+  // axios 인스턴스 생성 (모든 API 요청의 기본 URL 설정)
+  // Content-Type을 따로 지정하지 않음 → FormData 사용 시 axios가 자동으로 multipart/form-data 설정
 });
 
-// ✅ CSRF 자동 주입 (create.html과 동일)
+// CSRF 토큰 자동 추가 (Django 보안 필수)
 api.interceptors.request.use(config => {
+
   const csrfToken = document.cookie
     .split("; ")
     .find(row => row.startsWith("csrftoken"))
     ?.split("=")[1];
+  // 브라우저 쿠키에서 csrftoken 값을 찾아서 추출
 
   if (csrfToken) {
     config.headers["X-CSRFToken"] = csrfToken;
+    // Django에서 요구하는 CSRF 토큰을 요청 헤더에 추가
   }
+
   return config;
+  // 수정된 요청 설정 반환
 });
 
+
 const todoId = "{{ todo.id }}";
+// Django 템플릿에서 전달된 todo의 id(pk)를 JavaScript 변수로 저장
+
 
 document.getElementById("todoUpdate").addEventListener("click", async () => {
+  // id가 todoUpdate인 버튼을 클릭하면 실행
+
   try {
+
     const formData = new FormData();
+    // FormData 객체 생성 (폼 데이터를 서버로 전송하기 위한 객체)
 
     formData.append("name", document.getElementById("name").value);
+    // name 입력값을 FormData에 추가
+
     formData.append("description", document.getElementById("description").value);
+    // description 입력값을 FormData에 추가
+
     formData.append("complete", document.getElementById("complete").checked);
+    // 체크박스 상태(true / false)를 complete 값으로 추가
+
     formData.append("exp", document.getElementById("exp").value || 0);
+    // exp 입력값 추가 (값이 없으면 0으로 설정)
 
     const res = await api.patch(`/todo/viewsets/view/${todoId}/`, formData);
+    // PATCH 요청으로 Todo 데이터 수정 API 호출
+    // formData를 서버로 전송하여 일부 필드만 수정
 
     console.log(res.data);
+    // 서버에서 반환된 수정된 데이터 콘솔 출력
 
     window.location.href = `/todo/detail/${todoId}/`;
+    // 수정이 완료되면 해당 Todo의 상세 페이지로 이동
 
   } catch (err) {
     console.error(err.response?.data || err.message);
+    // 오류 발생 시 에러 메시지를 콘솔에 출력
+
     alert("수정 실패");
+    // 사용자에게 수정 실패 알림 표시
   }
 });
 </script>
@@ -819,19 +1074,33 @@ document.getElementById("todoUpdate").addEventListener("click", async () => {
 
 `todo/views/api_views.py`
 ```python
-# 삭제하기
+# 삭제하기 API
 class TodoDeleteAPI(APIView):
+
     def delete(self, request, pk):
+        # DELETE 요청이 들어오면 실행되는 함수
+        # pk는 URL로 전달된 Todo의 기본키(id)
+
         try:
             todo = Todo.objects.get(pk=pk)
+            # pk에 해당하는 Todo 데이터를 DB에서 조회
+
         except Todo.DoesNotExist:
+            # 해당 Todo가 존재하지 않을 경우 실행
+
             return Response(
                 {"error": "해당하는 todo가 없습니다."},
+                # 에러 메시지를 JSON 형태로 반환
+
                 status=status.HTTP_404_NOT_FOUND
+                # HTTP 상태코드 404 (데이터 없음)
             )
 
         todo.delete()
+        # 조회한 Todo 데이터를 DB에서 삭제
+
         return Response(status=status.HTTP_204_NO_CONTENT)
+        # 삭제 성공 시 응답 반환 (204 = 성공했지만 반환할 데이터 없음)
 ```
 
 `todo/urls.py`
@@ -855,47 +1124,71 @@ path("api/delete/<int:pk>/", TodoDeleteAPI.as_view(), name="todo_api_delete"),
 ```html
 <script>
 document.addEventListener("DOMContentLoaded", () => {
-  const todoId = "{{ todo.id }}";
+  // HTML 문서가 모두 로드된 후 실행
 
-  // 기존에 있는 수정 버튼
+  const todoId = "{{ todo.id }}";
+  // Django 템플릿에서 전달된 todo의 id(pk)를 JS 변수에 저장
+
+  // 기존 수정 버튼
   const updateBtn = document.querySelector(".todoUpdate");
+  // class가 todoUpdate인 버튼 선택
+
   updateBtn.addEventListener("click", () => {
+    // 수정 버튼 클릭 시 실행
     window.location.href = `/todo/update/${todoId}/`;
+    // 해당 todo의 수정 페이지로 이동
   });
 
-  // ✅ 삭제 버튼 수정
+  // 삭제 버튼
   const deleteBtn = document.querySelector(".todoDelete");
+  // class가 todoDelete인 버튼 선택
+
   deleteBtn.addEventListener("click", async () => {
+    // 삭제 버튼 클릭 시 실행
 
     const ok = confirm("정말 삭제하시겠습니까?");
+    // 사용자에게 삭제 여부 확인 창 표시
+
     if (!ok) return;
+    // 취소를 누르면 삭제 진행하지 않음
 
     try {
       const res = await fetch(`/todo/api/delete/${todoId}/`, {
+        // DELETE 요청으로 Todo 삭제 API 호출
         method: "DELETE",
+
         headers: {
           "Content-Type": "application/json",
+          // 서버에 JSON 형식 요청임을 알림
         }
       });
 
       if (!res.ok) throw new Error("삭제 실패");
+      // 응답이 정상적이지 않으면 에러 발생
 
-      // ✅ 삭제 성공 → 리스트로 이동
+      // 삭제 성공 시 Todo 목록 페이지로 이동
       window.location.href = "/todo/list/";
 
     } catch (err) {
       console.error(err);
+      // 오류 내용을 콘솔에 출력
+
       alert("삭제 중 오류가 발생했습니다.");
+      // 사용자에게 오류 메시지 표시
     }
   });
-  // ✅ 여기까지 삭제하기 종료
+  // 삭제 기능 끝
   
-  // ✅ 홈으로 버튼
-  const homeBtn = document.querySelector(".todoHome");
-  homeBtn.addEventListener("click", () => {
-    window.location.href = "/todo/list/";
-  });
-  // ✅ 홈으로 버튼 종료 
+  // 홈으로 버튼
+  const homeBtn = document.querySelector(".todoHome");
+  // class가 todoHome인 버튼 선택
+
+  homeBtn.addEventListener("click", () => {
+    // 홈 버튼 클릭 시 실행
+    window.location.href = "/todo/list/";
+    // Todo 목록 페이지로 이동
+  });
+  // 홈 버튼 기능 끝
   
 });
 </script>
@@ -914,8 +1207,42 @@ todo/
       ├── __init__.py   ← 이거 반드시 필요
       └── tests_crud.py
 ```
+---
+이 테스트 코드는 Todo API의 CRUD 전체 동작과 예외 처리(404)가 정상적으로 작동하는지를 검증하는 테스트입니다.
 
+Todo API 테스트 항목
 
+1. 목록 조회 테스트 (List)
+    - `/todo/api/list/` 요청이 정상적으로 동작하는지 확인합니다.
+    - 상태코드가 200인지 확인합니다.
+    - 응답 데이터가 리스트 형태인지 검증합니다.
+        
+2. 데이터 생성 테스트 (Create)
+    - `/todo/api/create/`로 새로운 Todo를 생성합니다.
+    - 상태코드가 201(생성 성공)인지 확인합니다.
+    - 데이터가 실제로 DB에 추가되었는지 확인합니다.
+        
+3. 상세 조회 테스트 (Retrieve)
+    - `/todo/api/retrieve/<pk>/` 요청으로 특정 Todo를 조회합니다.
+    - 상태코드가 **200**인지 확인합니다.
+    - 반환된 데이터의 내용이 올바른지 검증합니다.
+        
+4. 데이터 수정 테스트 (Update - PATCH)
+    - `/todo/api/update/<pk>/`로 Todo 일부 데이터를 수정합니다.
+    - 상태코드가 200인지 확인합니다.
+    - 실제 DB 값이 수정되었는지 검증합니다.
+        
+5. 데이터 삭제 테스트 (Delete)
+    - `/todo/api/delete/<pk>/` 요청으로 Todo를 삭제합니다.
+    - 상태코드가 204(삭제 성공)인지 확인합니다.
+    - 해당 데이터가 DB에서 실제로 삭제되었는지 확인합니다.
+        
+6. 존재하지 않는 데이터 요청 테스트 (404 처리)
+    - 존재하지 않는 id로 조회 요청을 보냅니다.
+    - 상태코드가 404(Not Found)로 반환되는지 확인합니다.
+        
+
+---
 테스트 코드 작성하기
 `todo/tests/tests_crud.py`
 ```python
@@ -1046,7 +1373,6 @@ class TodoAPITests(TestCase):
 4. PATCH `/todo/api/update/<pk>/` → 200 + 값 변경됨
 5. DELETE `/todo/api/delete/<pk>/` → 204 + 삭제됨
 
-
 테스트 실행
 ```bash
 python manage.py test
@@ -1066,44 +1392,61 @@ python manage.py test
 python 자신의 버전을 확인한뒤 버전을 수정합니다.
 ```yaml
 name: Django CI
+# GitHub Actions 워크플로우 이름 (Django 프로젝트 CI 실행)
 
 on:
   push:
     branches: [ "main" ]
   pull_request:
     branches: [ "main" ]
+# main 브랜치에 push 또는 pull request가 발생하면 실행
 
 jobs:
   build:
+  # 실행할 작업(Job) 이름
 
     runs-on: ubuntu-latest
+    # GitHub에서 제공하는 Ubuntu 환경에서 실행
+
     strategy:
       max-parallel: 4
+      # 최대 4개의 작업을 동시에 실행 가능
+
       matrix:
         python-version: ["3.12"]
+        # 사용할 Python 버전 지정 (여기서는 3.12)
 
     steps:
     - uses: actions/checkout@v4
+      # GitHub 저장소 코드를 워크플로우 환경으로 가져오기
+
     - name: Set up Python ${{ matrix.python-version }}
       uses: actions/setup-python@v3
       with:
         python-version: ${{ matrix.python-version }}
+      # 지정된 Python 버전 설치
+
     - name: Install Dependencies
       run: |
         python -m pip install --upgrade pip
         pip install -r requirements.txt
+      # pip 업데이트 후 requirements.txt에 있는 패키지 설치
+
     - name: Run Migrations
       run: |
         python manage.py migrate --noinput
+      # Django 데이터베이스 마이그레이션 실행
 
     - name: Debug Info
       run: |
         python manage.py showmigrations todo
         python manage.py shell -c "from django.conf import settings; print('DATABASES =', settings.DATABASES)"
+      # 마이그레이션 상태와 DB 설정 정보 확인 (디버깅용)
 
     - name: Run Tests
       run: |
         python manage.py test --verbosity 2
+      # Django 테스트 코드 실행
 ```
 
 

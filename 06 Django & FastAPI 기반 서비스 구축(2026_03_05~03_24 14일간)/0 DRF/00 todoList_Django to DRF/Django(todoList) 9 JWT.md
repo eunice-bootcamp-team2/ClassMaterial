@@ -122,6 +122,9 @@ E. 인증 UI(템플릿에서 request.user 사용 여부)
 현재 템플릿 + axios 혼합 구조라서,
 - UI는 템플릿이지만 인증은 API(JWT)로 가면 header 표시 방식도 바꾸는 게 일반적입니다.
 
+세션 기반 구조에서는 서버 템플릿(request.user)이 인증 상태를 직접 반영하지만,  
+JWT 기반 API 구조에서는 인증 상태를 프론트(JS)가 토큰으로 관리한다.
+
 ---
 ### 세션에서 JWT로 변환
 
@@ -266,7 +269,7 @@ class SessionLogoutAPIView(APIView):
 
 `로그인 페이지(login.html) JS변경` 
 `templates/accounts/login.html`
-```python
+```html
 {% extends "auth_base.html" %}
 
 {% block title %}로그인{% endblock %}
@@ -1399,9 +1402,6 @@ document.addEventListener("DOMContentLoaded", () => {
 });
 </script>
 ```
-
-
-
 
 ---
 토큰이 만료되면  [https://jwt.io](https://jwt.io) 접속
