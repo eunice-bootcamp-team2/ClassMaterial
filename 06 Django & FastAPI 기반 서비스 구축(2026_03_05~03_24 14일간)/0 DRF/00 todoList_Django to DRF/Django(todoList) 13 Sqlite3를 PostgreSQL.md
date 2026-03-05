@@ -147,12 +147,12 @@ uv pip install django-environ
 cp db.sqlite3 db.sqlite3.backup
 ```
 
-dump가 실제로 출력되는지 먼저 확인(0B 방지용)
+dump가 실제로 출력되는지 먼저 확인(0B 방지용): vscode 터미널에서 
 ```bash
 python manage.py dumpdata --indent 2 | head
 ```
 
-2-3) 데이터 덤프 생성
+2-3) 데이터 덤프 생성: vscode 터미널에서
 ```bash
 python manage.py dumpdata \  
 --natural-foreign --natural-primary \  
@@ -164,7 +164,7 @@ python manage.py dumpdata \
 > data.json
 ```
 
-2-4) dump 파일 생성 확인 : 파일 크기 확인
+2-4) dump 파일 생성 확인 : 파일 크기 확인: vscode 터미널에서
 ```bash
 ls -lh data.json
 ```
