@@ -1,3 +1,91 @@
+이번 단계에서는 Todo에 사용자 행동(좋아요, 북마크, 댓글) 기능을 추가합니다.  
+이 기능을 관리하기 위해 새로운 앱 `interaction`을 생성합니다.
+
+기존 구조는 다음과 같습니다.
+```
+Todo 앱  
+ └─ Todo 모델
+```
+
+하지만 Todo 아래에는 여러 사용자 행동이 생깁니다.
+```
+Todo  
+ ├ 좋아요  
+ ├ 북마크  
+ └ 댓글
+```
+그래서 이 기능들을 Todo 앱 안에 모두 넣지 않고, 별도의 앱 `interaction`으로 분리하여 관리합니다.
+
+interaction 앱은 Todo에 대한 사용자 행동을 저장하는 앱입니다.
+
+추가되는 모델
+```
+TodoLike  
+TodoBookmark  
+TodoComment
+```
+이 모델들은 모두 Todo와 연결됩니다.
+
+즉 관계는 다음과 같습니다.
+```
+User  
+  │  
+  ├─ TodoLike  
+  │      └─ 어떤 Todo에 좋아요 했는지  
+  │  
+  ├─ TodoBookmark  
+  │      └─ 어떤 Todo를 북마크 했는지  
+  │  
+  └─ TodoComment  
+         └─ 어떤 Todo에 댓글 작성했는지
+```
+
+핵심 포인트: 모든 인터랙션 데이터는 Todo와 ForeignKey로 연결됩니다.
+
+예
+```
+TodoLike  
+ └─ todo (FK → Todo)
+```
+
+즉, 좋아요 / 북마크 / 댓글은 모두 Todo를 기준으로 연결된 데이터입니다.
+
+Todo 입장에서 보면 다음 관계가 생깁니다.
+```
+Todo  
+ ├ likes  
+ ├ bookmarks  
+ └ comments
+```
+
+예
+```
+todo.likes.count()  
+todo.bookmarks.count()  
+todo.comments.all()
+```
+즉, Todo 아래에 좋아요 / 북마크 / 댓글이 연결되는 구조입니다.
+
+interaction 앱에서 수정되는 주요 파일
+```
+interaction/
+ ├ models.py        → 좋아요 / 북마크 / 댓글 모델
+ ├ serializers.py   → 인터랙션 데이터 직렬화
+ ├ views.py         → 인터랙션 API
+ └ urls.py          → 인터랙션 API 주소
+```
+
+그리고 Todo 앱에서도 일부 수정이 발생합니다.
+```
+todo/
+ ├ serializers.py   → 좋아요 수 / 북마크 수 / 댓글 수 계산
+ └ views/api_views.py → 좋아요 / 북마크 / 댓글 API 추가
+```
+즉
+👉 데이터는 interaction 앱에 저장되지만  
+👉 Todo API 응답에는 이 정보가 함께 포함됩니다.
+
+---
 - 새 앱 `interaction`이 추가됨
 	- `python manage.py startapp interaction` 으로 앱 생성
 	- `mysite/settings.py`의 `INSTALLED_APPS`에 `"interaction"` 추가

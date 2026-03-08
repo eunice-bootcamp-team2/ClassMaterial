@@ -1,5 +1,46 @@
-### 변환 순서 (실무에서 실수 줄이는 순서)
 
+1️⃣ 현재까지 만들어진 로그인 방식 (세션 방식)
+지금까지는 Django 기본 로그인 방식 = 세션(Session) 입니다.
+
+동작 흐름은 다음과 같습니다.
+```
+1. 사용자가 로그인 요청
+2. 서버가 로그인 성공 확인
+3. 서버가 sessionid 쿠키를 브라우저에 저장
+4. 이후 요청마다 브라우저가 sessionid 자동 전송
+5. 서버가 sessionid로 사용자 확인
+```
+즉 로그인 상태를 서버가 기억하는 방식입니다.
+```
+브라우저
+   │
+   │ sessionid 쿠키
+   ▼
+Django 서버 (세션 저장)
+```
+그래서 지금은 `request.user`가 자동으로 동작합니다. 
+
+2️⃣ 바꾸려는 방식 (JWT 방식)
+JWT는 서버가 로그인 상태를 저장하지 않습니다.
+대신 토큰을 사용자에게 발급합니다.
+```
+1. 로그인 요청
+2. 서버가 JWT 토큰 발급
+3. 브라우저가 토큰 저장
+4. 이후 요청마다 토큰을 Authorization 헤더로 전송
+5. 서버는 토큰을 검사해서 사용자 확인
+```
+구조
+```
+브라우저
+   │
+   │ Authorization: Bearer 토큰
+   ▼
+Django 서버 (토큰 검증만)
+```
+즉 로그인 상태를 토큰으로 증명하는 방식입니다.
+
+3️⃣ 변환 순서 (실무에서 실수 줄이는 순서)
 1. JWT 라이브러리(simplejwt) 설치/설정 → settings.py 변경
 2. 로그인 API를 JWT 발급으로 교체 (`/api/login/` → 토큰 발급)
 3. axios 공통 인스턴스에서 Authorization 자동 부착
@@ -8,122 +49,185 @@
 6. 로그아웃 UX(토큰 삭제/블랙리스트) 정리
 7. header 표시 방식 정리(템플릿 vs JS)
 
-(1) 토큰 저장 위치
-- localStorage: 구현 쉬움(학습/개발에 많이 씀) / XSS에 취약
-- HttpOnly 쿠키: 보안 강함 / CSRF 고려 + 구현 복잡
+---
+### 1️⃣ 먼저 이해해야 하는 핵심 (세션 → JWT)
 
-(2) 템플릿 헤더에서 로그인 표시 유지할지
-- 유지하려면: JWT를 쿠키 전략으로 가야 편함
-- SPA처럼 갈 거면: JS로 토큰 유무로 표시 변경
+#### 기존 방식 (세션 인증)
+
+로그인하면
+```
+서버 → sessionid 쿠키 발급
+```
+
+이후 요청
+```
+브라우저가 sessionid 자동 전송
+```
+
+서버는
+```
+sessionid → 사용자 확인
+```
+즉 서버가 로그인 상태를 저장합니다.
+
+#### JWT 기반
+
+로그인하면
+```
+서버 → access token + refresh token 발급
+```
+
+이후 요청
+```
+Authorization: Bearer access_token
+```
+이렇게 요청 헤더에 토큰을 붙여서 보내야 합니다.
+
+서버는
+```
+토큰 서명 검증 → 사용자 확인
+```
+즉 로그인 상태를 서버가 저장하지 않습니다.
 
 ---
-### 1️⃣ 먼저 개념: 세션 vs JWT에서 바뀌는 핵심
+### 2️⃣ JWT로 바꿀 때 작업 순서 (실무에서 많이 쓰는 순서)
 
-세션 기반
-- 로그인 성공 → 서버가 `sessionid` 쿠키를 내려줌
-- 이후 요청은 브라우저가 sessionid 쿠키를 자동 전송
-- 서버는 세션 저장소(DB/캐시)를 보고 사용자 식별
-    
+`1. settings.py 설정 변경`
+먼저 Django가 JWT 인증을 사용하도록 설정해야 합니다.
 
-JWT 기반(바꿀 것)
-- 로그인 성공 → 서버가 `access/refresh 토큰`을 내려줌
-- 이후 요청은 JS가 access 토큰을 저장해 요청 헤더에 붙임  
-    `Authorization: Bearer <access>`
-- 서버는 세션 저장소 없이 토큰 서명 검증으로 사용자 식별
-- access 만료 → refresh로 재발급
-    
-즉 세션쿠키 자동 인증 → 헤더에 토큰 수동 부착으로 바뀝니다.
+지금은
+```
+SessionAuthentication
+```
+을 사용하고 있습니다.
+
+이것을
+```
+JWTAuthentication
+```
+으로 변경합니다.
+
+즉, Django가 세션 대신 JWT 토큰으로 사용자를 확인하도록 만드는 단계입니다.
 
 ---
-### 2️⃣ 변환하면 “수정해야 하는 파일 영역” (큰 덩어리 5개)
+`2. accounts 앱 로그인 방식 변경`
 
-A. settings.py (가장 중요)
-- DRF 인증 클래스를 SessionAuthentication → JWTAuthentication으로 교체
-- 권한 기본값(`IsAuthenticated`) 유지/조정
-- CORS/CSRF 전략을 정해야 함
-    - JWT를 헤더에 담으면 CSRF 의존이 줄어듦(쿠키 쓰는 방식이면 CSRF 고려 필요)
-        
-수정 대상
-- `mysite/settings.py`
-    
+지금 로그인 방식
+```
+/api/login/  
+→ authenticate()  
+→ login()  
+→ 세션 생성
+```
+
+JWT 방식에서는
+```
+/api/login/  
+→ access 토큰 발급  
+→ refresh 토큰 발급
+```
+즉 로그인하면 세션이 아니라 토큰을 받게 됩니다.
+
+로그아웃도 바뀝니다.
+
+세션 방식
+```
+logout()  
+→ 서버에서 세션 삭제
+```
+
+JWT 방식
+```
+브라우저에서 토큰 삭제
+```
+즉 토큰을 지우면 로그아웃입니다.
+
 ---
-B. accounts 앱 (로그인/로그아웃 방식 변경)
+`3. 프론트(JS)에서 인증 방식 변경`
 
-지금은:
-- `/api/login/` : `authenticate()` + `login()` (세션 생성)
-- `/api/logout/` : `logout()` (세션 삭제)
-    
-JWT로 바꾸면:
-- `/api/login/`은 보통 simplejwt의 TokenObtainPairView로 대체
-    - 응답: `{access, refresh}`
-        
-- `/api/logout/`은 세션처럼 서버에서 끊는”개념이 약함
-    - 실무 선택지 2가지:
-        1. 프론트에서 토큰 삭제만 하고 끝(가장 흔함)
-        2. refresh 토큰을 서버에서 무효화(블랙리스트) 기능 추가(보안 강화)
-            
-수정 대상
-- `accounts/urls.py` (JWT 로그인/refresh 경로로 변경)
-- `accounts/views.py` (세션 로그인/로그아웃 API는 제거하거나 JWT용으로 변경)
-- (선택) `accounts/serializers.py`는 회원가입은 그대로 쓸 수 있음
-    
+지금 방식
+```
+쿠키(sessionid) 자동 전송
+```
+
+그래서
+```
+withCredentials  
+CSRF 토큰
+```
+을 사용했습니다.
+
+JWT 방식에서는
+```
+Authorization: Bearer access_token
+```
+을 모든 요청에 직접 붙여야 합니다. 그래서 axios 설정을 바꿔야 합니다. 
+
+또한 토큰이 만료되면
+```
+refresh 토큰으로 access 재발급
+```
+하는 로직도 추가할 수 있습니다.
+
 ---
-C. 프론트(JS) 코드 전반 (axios 인증 방식 변경)
+`4. API 요청 방식 확인`
 
-지금은:
-- `withCredentials: true` + CSRF 토큰(X-CSRFToken) 주입
-- 서버가 쿠키(sessionid)로 인증
-    
-JWT로 바꾸면:
-- 로그인 성공 시 받은 `access/refresh`를 저장하고
-- 요청마다 axios interceptor에서:
-    - `Authorization: Bearer <access>` 붙여야 함
-        
-- 401(토큰 만료) 나오면:
-    - refresh로 access 재발급 후 원 요청 재시도(자동화 가능)
-        
-수정 대상
-- `templates/accounts/login.html` (로그인 성공 시 토큰 저장)
-- `templates/accounts/signup.html` (보통 변화 없음, 가입 후 로그인 이동만)
-- `templates/todo/list.html`, `create.html`, `update.html`, `detail.html`
-    - axios 인스턴스/인터셉터를 JWT 방식으로 변경
-- `templates/header.html`
-    - 로그아웃은 `/api/logout/` 호출이 아니라 토큰 삭제 + 이동으로 변경
-        
+JWT 방식에서는 토큰이 없으면
+```
+401 Unauthorized
+```
+가 발생합니다. 그래서 모든 API 요청에 토큰이 붙어 있는지 확인해야 합니다.
+
+좋은 점은 보통
+```
+settings.py
+```
+에서 인증 클래스를 바꾸면 대부분의 API 코드는 수정하지 않아도 됩니다.
+
 ---
-D. 백엔드 API 권한/인증이 걸린 ViewSet / APIView
-지금은 세션 인증이 기본이라 로그인 세션이 있으면 통과.
+`5. 로그인 UI 표시 방식 변경`
+여기가 중요한 부분입니다.
+세션 방식에서는 템플릿에서 바로 로그인 상태를 확인할 수 있습니다.
 
-JWT로 바꾸면:
-- `Authorization` 헤더 없으면 401
-- 그래서 프론트가 반드시 헤더를 붙이도록 해야 함
-    
-수정 대상
-- todo 쪽 viewset / apiview 파일은 보통 직접 수정이 크지 않음  
-    (settings의 인증 클래스가 바뀌면 자동으로 JWT를 보게 됨)
-- 다만 예외적으로 `SessionAuthentication`을 view에서 직접 지정해뒀다면 제거해야 함
-    
+예
+```
+{% if request.user.is_authenticated %}
+```
+
+하지만 JWT 방식에서는 서버 템플릿이 토큰을 알 수 없습니다. 그래서 보통 이렇게 합니다.
+
+방법 1 (가장 흔함)
+```
+JS에서 토큰 존재 여부 확인
+```
+
+예
+```
+localStorage에 토큰 있으면 로그인 상태
+```
+
+방법 2
+```
+JWT를 쿠키에 저장
+```
+
+하지만 이 방법은 설정이 더 복잡합니다. 그래서 대부분 JS로 로그인 상태를 관리합니다.
+
 ---
-E. 인증 UI(템플릿에서 request.user 사용 여부)
+전체 흐름 한 번에 정리
 
-중요 포인트:
-- 세션 기반은 템플릿 렌더링 시점에 `request.user`가 이미 인증됨 → `header.html`에서 `{% if request.user.is_authenticated %}`가 잘 먹음
-- JWT를 순수 API 방식(헤더)로 쓰면, 브라우저가 템플릿 GET 요청할 때 JWT를 자동으로 못 붙임
-    - 즉, 서버 템플릿 관점에서는 `request.user`가 항상 익명일 수 있음
-        
-그래서 실무에서 선택이 갈립니다:
-1. 완전 SPA 스타일(추천 흐름)
-    - header의 로그인/로그아웃 표시도 JS로 토큰 유무 보고 바꿈
-    - 서버 템플릿 `request.user`에 의존하지 않음
-2. JWT를 쿠키에 넣는 방식(HttpOnly cookie)
-    - 템플릿 렌더링에도 인증이 어느 정도 반영 가능
-    - 대신 CSRF/쿠키 전략이 다시 복잡해짐
-        
-현재 템플릿 + axios 혼합 구조라서,
-- UI는 템플릿이지만 인증은 API(JWT)로 가면 header 표시 방식도 바꾸는 게 일반적입니다.
-
-세션 기반 구조에서는 서버 템플릿(request.user)이 인증 상태를 직접 반영하지만,  
-JWT 기반 API 구조에서는 인증 상태를 프론트(JS)가 토큰으로 관리한다.
+JWT 방식 로그인 흐름
+```
+로그인  
+↓  
+서버가 access / refresh 토큰 발급  
+↓  
+브라우저가 토큰 저장  
+↓  
+API 요청 시 Authorization 헤더에 토큰 첨부  
+↓  
+서버가 토큰 검증 후 사용자 확인
+```
 
 ---
 ### 세션에서 JWT로 변환
