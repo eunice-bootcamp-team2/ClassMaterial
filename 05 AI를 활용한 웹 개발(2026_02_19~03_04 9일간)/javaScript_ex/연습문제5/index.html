@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <title>Mini Timer (JS)</title>
+  <style>
+    body{font-family:system-ui;padding:24px;max-width:520px;margin:auto;text-align:center}
+    .row{display:flex;gap:8px;justify-content:center;align-items:center}
+    input{width:120px;padding:10px;text-align:center}
+    button{padding:10px 12px;cursor:pointer}
+    .screen{margin-top:18px;font-size:44px;border:1px solid #ddd;border-radius:14px;padding:18px}
+    .muted{color:#666;font-size:14px;margin-top:10px}
+  </style>
+</head>
+<body>
+  <h2>⏱️ Mini Timer</h2>
+
+  <div class="row">
+    <input id="secInput" type="number" min="1" placeholder="초 입력" />
+    <button id="startBtn">시작</button>
+    <button id="pauseBtn">일시정지</button>
+    <button id="resetBtn">리셋</button>
+  </div>
+
+  <div id="screen" class="screen">0</div>
+  <div id="msg" class="muted"></div>
+
+  <script>
+    const secInput = document.getElementById("secInput");
+    const screen = document.getElementById("screen");
+    const msg = document.getElementById("msg");
+
+    const startBtn = document.getElementById("startBtn");
+    const pauseBtn = document.getElementById("pauseBtn");
+    const resetBtn = document.getElementById("resetBtn");
+
+    let timerId = null;
+    let remaining = 0;
+    let initial = 0;
+
+    function render() {
+      screen.textContent = remaining;
+    }
+
+    function start() {
+      // 이미 돌아가면 중복 시작 방지
+      if (timerId) return;
+
+      // 처음 시작이면 input에서 세팅
+      if (remaining === 0) {
+        const v = Number(secInput.value);
+        if (!v || v < 1) {
+          msg.textContent = "⚠️ 1 이상 숫자를 입력하세요.";
+          return;
+        }
+        msg.textContent = "";
+        initial = v;
+        remaining = v;
+        render();
+      }
+
+      timerId = setInterval(() => {
+        remaining -= 1;
+        render();
+
+        if (remaining <= 0) {
+          remaining = 0;
+          render();
+          msg.textContent = "✅ 끝!";
+          clearInterval(timerId);
+          timerId = null;
+        }
+      }, 1000);
+    }
+
+    function pause() {
+      if (!timerId) return;
+      clearInterval(timerId);
+      timerId = null;
+      msg.textContent = "⏸️ 일시정지";
+    }
+
+    function reset() {
+      clearInterval(timerId);
+      timerId = null;
+
+      // 입력값이 있으면 그 값으로 리셋, 없으면 initial 사용
+      const v = Number(secInput.value);
+      if (v && v >= 1) {
+        initial = v;
+      }
+      remaining = initial || 0;
+      msg.textContent = "🔄 리셋됨";
+      render();
+    }
+
+    startBtn.addEventListener("click", start);
+    pauseBtn.addEventListener("click", pause);
+    resetBtn.addEventListener("click", reset);
+  </script>
+</body>
+</html>

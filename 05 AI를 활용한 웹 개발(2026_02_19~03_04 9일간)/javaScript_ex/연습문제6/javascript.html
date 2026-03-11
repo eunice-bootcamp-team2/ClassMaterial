@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <title>Mini Todo (JS)</title>
+  <style>
+    body{font-family:system-ui;padding:24px;max-width:620px;margin:auto}
+    h2{text-align:center}
+    .row{display:flex;gap:8px;justify-content:center;align-items:center;flex-wrap:wrap}
+    input{flex:1;min-width:220px;padding:10px}
+    button{padding:10px 12px;cursor:pointer}
+    .card{margin-top:14px;border:1px solid #eee;border-radius:14px;padding:14px}
+    ul{margin:0;padding-left:18px}
+    li{display:flex;align-items:center;gap:10px;padding:8px 0}
+    .text.done{text-decoration:line-through;color:#888}
+    .meta{display:flex;justify-content:space-between;align-items:center;gap:10px}
+    .muted{color:#666;font-size:14px}
+    .danger{border:1px solid #f1c7c7;background:#fff5f5;border-radius:10px;padding:8px 10px}
+  </style>
+</head>
+<body>
+  <h2>✅ Mini Todo (JS)</h2>
+
+  <div class="row">
+    <input id="todoInput" placeholder="할 일을 입력하세요 (예: 스쿼트 50회)" />
+    <button id="addBtn">추가</button>
+    <button id="clearDoneBtn">완료 삭제</button>
+  </div>
+
+  <div class="card">
+    <div class="meta">
+      <div class="muted">남은 할 일: <b id="leftCount">0</b>개</div>
+      <div id="msg" class="muted"></div>
+    </div>
+    <ul id="list"></ul>
+  </div>
+
+  <script>
+    const input = document.getElementById("todoInput");
+    const addBtn = document.getElementById("addBtn");
+    const clearDoneBtn = document.getElementById("clearDoneBtn");
+    const list = document.getElementById("list");
+    const leftCount = document.getElementById("leftCount");
+    const msg = document.getElementById("msg");
+
+    let todos = []; // {id, text, done}
+
+    function setMsg(t, isError=false){
+      msg.textContent = t || "";
+      msg.className = isError ? "muted danger" : "muted";
+    }
+
+    function render(){
+      list.innerHTML = "";
+      for (const t of todos){
+        const li = document.createElement("li");
+
+        const chk = document.createElement("input");
+        chk.type = "checkbox";
+        chk.checked = t.done;
+        chk.addEventListener("change", () => {
+          t.done = chk.checked;
+          render();
+        });
+
+        const span = document.createElement("span");
+        span.className = "text" + (t.done ? " done" : "");
+        span.textContent = t.text;
+
+        const del = document.createElement("button");
+        del.textContent = "삭제";
+        del.addEventListener("click", () => {
+          todos = todos.filter(x => x.id !== t.id);
+          render();
+        });
+
+        li.appendChild(chk);
+        li.appendChild(span);
+        li.appendChild(del);
+        list.appendChild(li);
+      }
+
+      const left = todos.filter(t => !t.done).length;
+      leftCount.textContent = String(left);
+    }
+
+    function addTodo(){
+      const text = input.value.trim();
+      if (!text){
+        setMsg("⚠️ 내용을 입력하세요.", true);
+        return;
+      }
+      setMsg("");
+      todos.unshift({ id: crypto.randomUUID(), text, done:false });
+      input.value = "";
+      input.focus();
+      render();
+    }
+
+    function clearDone(){
+      const before = todos.length;
+      todos = todos.filter(t => !t.done);
+      const removed = before - todos.length;
+      setMsg(removed ? `🗑️ 완료 ${removed}개 삭제됨` : "삭제할 완료 항목이 없습니다.");
+      render();
+    }
+
+    addBtn.addEventListener("click", addTodo);
+    clearDoneBtn.addEventListener("click", clearDone);
+    input.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") addTodo();
+    });
+
+    render();
+  </script>
+</body>
+</html>

@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <title>Like / Dislike (JS)</title>
+  <style>
+    body{font-family:system-ui;padding:24px;max-width:520px;margin:auto;text-align:center}
+    .box{border:1px solid #ddd;border-radius:14px;padding:18px}
+    button{padding:10px 14px;margin:6px;cursor:pointer}
+    .nums{font-size:20px;margin-top:10px}
+    .muted{color:#666;font-size:14px;margin-top:10px}
+  </style>
+</head>
+<body>
+  <h2>👍👎 투표</h2>
+  <div class="box">
+    <button id="likeBtn">좋아요</button>
+    <button id="dislikeBtn">싫어요</button>
+    <button id="resetBtn">초기화</button>
+
+    <div class="nums">
+      좋아요: <span id="likeCount">0</span> /
+      싫어요: <span id="dislikeCount">0</span>
+    </div>
+    <div id="msg" class="muted">둘 중 하나만 선택 가능</div>
+  </div>
+
+  <script>
+    const likeBtn = document.getElementById("likeBtn");
+    const dislikeBtn = document.getElementById("dislikeBtn");
+    const resetBtn = document.getElementById("resetBtn");
+    const likeCount = document.getElementById("likeCount");
+    const dislikeCount = document.getElementById("dislikeCount");
+    const msg = document.getElementById("msg");
+
+    let voted = false;
+
+    function lockButtons() {
+      likeBtn.disabled = true;
+      dislikeBtn.disabled = true;
+    }
+
+    function unlockButtons() {
+      likeBtn.disabled = false;
+      dislikeBtn.disabled = false;
+    }
+
+    likeBtn.addEventListener("click", () => {
+      if (voted) return;
+      likeCount.textContent = Number(likeCount.textContent) + 1;
+      voted = true;
+      msg.textContent = "✅ 좋아요로 선택했습니다.";
+      lockButtons();
+    });
+
+    dislikeBtn.addEventListener("click", () => {
+      if (voted) return;
+      dislikeCount.textContent = Number(dislikeCount.textContent) + 1;
+      voted = true;
+      msg.textContent = "✅ 싫어요로 선택했습니다.";
+      lockButtons();
+    });
+
+    resetBtn.addEventListener("click", () => {
+      likeCount.textContent = "0";
+      dislikeCount.textContent = "0";
+      voted = false;
+      msg.textContent = "둘 중 하나만 선택 가능";
+      unlockButtons();
+    });
+  </script>
+</body>
+</html>

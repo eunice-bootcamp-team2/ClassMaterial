@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <title>Like / Dislike (jQuery)</title>
+  <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+  <style>
+    body{font-family:system-ui;padding:24px;max-width:520px;margin:auto;text-align:center}
+    .box{border:1px solid #ddd;border-radius:14px;padding:18px}
+    button{padding:10px 14px;margin:6px;cursor:pointer}
+    .nums{font-size:20px;margin-top:10px}
+    .muted{color:#666;font-size:14px;margin-top:10px}
+  </style>
+</head>
+<body>
+  <h2>👍👎 투표</h2>
+  <div class="box">
+    <button id="likeBtn">좋아요</button>
+    <button id="dislikeBtn">싫어요</button>
+    <button id="resetBtn">초기화</button>
+
+    <div class="nums">
+      좋아요: <span id="likeCount">0</span> /
+      싫어요: <span id="dislikeCount">0</span>
+    </div>
+    <div id="msg" class="muted">둘 중 하나만 선택 가능</div>
+  </div>
+
+  <script>
+    let voted = false;
+
+    function lockButtons() {
+      $("#likeBtn, #dislikeBtn").prop("disabled", true);
+    }
+    function unlockButtons() {
+      $("#likeBtn, #dislikeBtn").prop("disabled", false);
+    }
+
+    $("#likeBtn").on("click", function () {
+      if (voted) return;
+      $("#likeCount").text(Number($("#likeCount").text()) + 1);
+      voted = true;
+      $("#msg").text("✅ 좋아요로 선택했습니다.");
+      lockButtons();
+    });
+
+    $("#dislikeBtn").on("click", function () {
+      if (voted) return;
+      $("#dislikeCount").text(Number($("#dislikeCount").text()) + 1);
+      voted = true;
+      $("#msg").text("✅ 싫어요로 선택했습니다.");
+      lockButtons();
+    });
+
+    $("#resetBtn").on("click", function () {
+      $("#likeCount").text("0");
+      $("#dislikeCount").text("0");
+      voted = false;
+      $("#msg").text("둘 중 하나만 선택 가능");
+      unlockButtons();
+    });
+  </script>
+</body>
+</html>

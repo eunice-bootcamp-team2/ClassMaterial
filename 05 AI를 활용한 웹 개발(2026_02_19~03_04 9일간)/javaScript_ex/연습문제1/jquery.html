@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <title>닉네임 생성기 (jQuery)</title>
+  <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+  <style>
+    body { font-family: sans-serif; padding: 40px; text-align: center; }
+    input { padding: 10px; width: 250px; font-size: 16px; }
+    button { padding: 10px 14px; margin-left: 8px; cursor: pointer; }
+    .card {
+      margin-top: 30px;
+      padding: 20px;
+      border-radius: 14px;
+      border: 1px solid #ddd;
+      font-size: 22px;
+      transition: 0.3s;
+    }
+  </style>
+</head>
+<body>
+
+  <h2>🎲 닉네임 생성기 (jQuery)</h2>
+
+  <input id="nameInput" placeholder="이름 입력">
+  <button id="genBtn">생성</button>
+
+  <div id="resultCard" class="card">
+    결과 표시 영역 
+  </div>
+
+  <script>
+    const adjectives = ["행복한", "용감한", "졸린", "미친", "반짝이는", "귀여운"];
+    const animals = ["고양이", "호랑이", "햄스터", "펭귄", "여우", "수달"];
+    const emojis = ["😎", "🔥", "🚀", "🐱", "🌈", "👑"];
+    const colors = ["#ff7675", "#74b9ff", "#55efc4", "#ffeaa7", "#a29bfe"];
+
+    function pick(arr) {
+      return arr[Math.floor(Math.random() * arr.length)];
+    }
+
+    function generateNickname() {
+      //글자를 가져와서 공백을 제거후 변수에 저장
+      const name = $("#nameInput").val().trim();
+
+      if (!name) {
+        $("#resultCard").text("이름을 입력하세요");
+        return;
+      }
+      
+      // 문자열(String) 만드는 문법 ex) 행복한 고양이 이모지폰트
+      const nickname = `${pick(adjectives)} ${pick(animals)} ${pick(emojis)}`;
+
+      $("#resultCard").text(name + "님의 별명: " + nickname).css("background-color", pick(colors));
+    }
+
+
+    $("#genBtn").on("click", generateNickname);
+
+    $("#nameInput").on("keydown", function (e) {
+      if (e.key === "Enter") {
+        generateNickname();
+      }
+    });
+  </script>
+
+</body>
+</html>

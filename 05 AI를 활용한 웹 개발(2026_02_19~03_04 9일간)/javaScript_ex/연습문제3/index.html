@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <title>Mini ToDo (JS)</title>
+  <style>
+    body{font-family:system-ui;padding:24px;max-width:520px;margin:auto}
+    .row{display:flex;gap:8px}
+    input{flex:1;padding:10px}
+    button{padding:10px 12px;cursor:pointer}
+    ul{padding-left:18px}
+    li{display:flex;justify-content:space-between;align-items:center;margin:8px 0}
+    .muted{color:#666;font-size:14px;margin-top:10px}
+    .msg{margin-top:10px;font-size:14px;color:#c0392b}
+  </style>
+</head>
+<body>
+  <h2>✅ Mini ToDo</h2>
+
+  <div class="row">
+    <input id="todoInput" placeholder="할 일을 입력하세요" />
+    <button id="addBtn">추가</button>
+  </div>
+
+  <div id="msg" class="msg"></div>
+  <ul id="todoList"></ul>
+  <div class="muted">총 개수: <span id="count">0</span></div>
+
+  <script>
+    const input = document.getElementById("todoInput");
+    const addBtn = document.getElementById("addBtn");
+    const list = document.getElementById("todoList");
+    const countEl = document.getElementById("count");
+    const msg = document.getElementById("msg");
+
+    function updateCount() {
+      countEl.textContent = list.querySelectorAll("li").length;
+    }
+
+    function addTodo() {
+      const text = input.value.trim();
+      if (!text) {
+        msg.textContent = "⚠️ 내용을 입력하세요.";
+        return;
+      }
+      msg.textContent = "";
+
+      const li = document.createElement("li");
+      li.innerHTML = `
+        <span class="text"></span>
+        <button class="delBtn">삭제</button>
+      `;
+      li.querySelector(".text").textContent = text;
+
+      // 삭제 버튼 이벤트
+      li.querySelector(".delBtn").addEventListener("click", () => {
+        li.remove();
+        updateCount();
+      });
+
+      list.appendChild(li);
+      input.value = "";
+      input.focus();
+      updateCount();
+    }
+
+    addBtn.addEventListener("click", addTodo);
+    input.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") addTodo();
+    });
+  </script>
+</body>
+</html>

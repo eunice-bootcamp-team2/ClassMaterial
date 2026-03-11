@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <title>Mini ToDo (jQuery)</title>
+  <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+  <style>
+    body{font-family:system-ui;padding:24px;max-width:520px;margin:auto}
+    .row{display:flex;gap:8px}
+    input{flex:1;padding:10px}
+    button{padding:10px 12px;cursor:pointer}
+    ul{padding-left:18px}
+    li{display:flex;justify-content:space-between;align-items:center;margin:8px 0}
+    .muted{color:#666;font-size:14px;margin-top:10px}
+    .msg{margin-top:10px;font-size:14px;color:#c0392b}
+  </style>
+</head>
+<body>
+  <h2>✅ Mini ToDo</h2>
+
+  <div class="row">
+    <input id="todoInput" placeholder="할 일을 입력하세요" />
+    <button id="addBtn">추가</button>
+  </div>
+
+  <div id="msg" class="msg"></div>
+  <ul id="todoList"></ul>
+  <div class="muted">총 개수: <span id="count">0</span></div>
+
+  <script>
+    function updateCount() {
+      $("#count").text($("#todoList li").length);
+    }
+
+    function addTodo() {
+      const text = $("#todoInput").val().trim();
+      if (!text) {
+        $("#msg").text("⚠️ 내용을 입력하세요.");
+        return;
+      }
+      $("#msg").text("");
+
+      const $li = $(`
+        <li>
+          <span class="text"></span>
+          <button class="delBtn">삭제</button>
+        </li>
+      `);
+
+      $li.find(".text").text(text);
+
+      // 이벤트 위임 말고, 지금 수준에 맞게 '생성한 직후' 클릭 바인딩
+      $li.find(".delBtn").on("click", function () {
+        $li.remove();
+        updateCount();
+      });
+
+      $("#todoList").append($li);
+      $("#todoInput").val("").focus();
+      updateCount();
+    }
+
+    $("#addBtn").on("click", addTodo);
+    $("#todoInput").on("keydown", function (e) {
+      if (e.key === "Enter") addTodo();
+    });
+  </script>
+</body>
+</html>

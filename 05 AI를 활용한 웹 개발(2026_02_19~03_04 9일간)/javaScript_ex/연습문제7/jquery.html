@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <title>Live Search Highlight (jQuery)</title>
+  <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+  <style>
+    body{font-family:system-ui;padding:24px;max-width:700px;margin:auto}
+    h2{text-align:center}
+    .row{display:flex;gap:8px;justify-content:center;align-items:center;flex-wrap:wrap}
+    input{flex:1;min-width:260px;padding:10px}
+    .card{margin-top:14px;border:1px solid #eee;border-radius:14px;padding:14px}
+    .muted{color:#666;font-size:14px}
+    ul{margin:0;padding-left:18px}
+    li{padding:6px 0}
+    mark{padding:0 2px}
+  </style>
+</head>
+<body>
+  <h2>🔎 Live Search Highlight (jQuery)</h2>
+
+  <div class="row">
+    <input id="q" placeholder="검색어를 입력하세요 (예: 영화, AI, 리뷰)" />
+    <div class="muted">결과: <b id="count">0</b>개</div>
+  </div>
+
+  <div class="card">
+    <ul id="list"></ul>
+  </div>
+
+  <script>
+    const items = [
+      "영화 리뷰 감정 분석",
+      "DRF Todo 프로젝트",
+      "Redis + Celery 비동기 처리",
+      "FastAPI로 모델 서빙",
+      "카카오맵 맛집 크롤링",
+      "PostgreSQL 마이그레이션",
+      "jQuery 이벤트 연습",
+      "JavaScript DOM 조작",
+      "관제 플랫폼 이상탐지",
+      "Hugging Face 파이프라인"
+    ];
+
+    function escapeHtml(s){
+      return s.replaceAll("&","&amp;")
+              .replaceAll("<","&lt;")
+              .replaceAll(">","&gt;")
+              .replaceAll('"',"&quot;")
+              .replaceAll("'","&#039;");
+    }
+
+    function highlight(text, keyword){
+      if (!keyword) return escapeHtml(text);
+      const safeText = escapeHtml(text);
+      const safeKey = escapeHtml(keyword);
+
+      const re = new RegExp(safeKey.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "ig");
+      return safeText.replace(re, (m) => `<mark>${m}</mark>`);
+    }
+
+    function render(){
+      const keyword = $("#q").val().trim();
+      $("#list").empty();
+
+      const filtered = items.filter(s =>
+        keyword === "" ? true : s.toLowerCase().includes(keyword.toLowerCase())
+      );
+
+      $("#count").text(String(filtered.length));
+
+      filtered.forEach(s => {
+        $("<li/>").html(highlight(s, keyword)).appendTo("#list");
+      });
+    }
+
+    $("#q").on("input", render);
+    render();
+  </script>
+</body>
+</html>
