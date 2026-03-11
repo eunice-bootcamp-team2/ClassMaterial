@@ -1,38 +1,54 @@
 
-FastAPI는 **Python**으로 만든 빠르고 현대적인 웹 프레임워크입니다. 주로 REST API 서버를 구축할 때 사용되며, 이름 그대로 매우 빠른 속도와 생산성을 자랑합니다.
+FastAPI는 Python으로 만든 빠르고 현대적인 웹 프레임워크입니다. 주로 REST API 서버를 구축할 때 사용되며, 이름 그대로 매우 빠른 속도와 생산성을 자랑합니다.
 
-FastAPI란?
-> FastAPI = “Python + 타입힌트 + Starlette + Pydantic” 기반의 초고속 API 전용 백엔드 프레임워크  
+### FastAPI란?
+> FastAPI = `Python + 타입힌트 + Starlette + Pydantic` 기반의 초고속 API 전용 백엔드 프레임워크  
 
 - **Django**: 웹사이트 전체(템플릿, Admin, ORM, 인증 등)를 다 갖춘 풀스택 웹 프레임워크
 - **Django REST Framework(DRF)**: Django 위에서 돌아가는 API 프레임워크
-- **FastAPI**: 처음부터 **API 서버**만을 잘 만들도록 설계된 **경량·고성능 백엔드 프레임워크**
+- **FastAPI**: 처음부터 **API 서버**만을 잘 만들도록 설계된 경량·고성능 백엔드 프레임워크
 
-FastAPI 내부 구성
-	- FastAPI = Starlette(ASGI 웹 프레임워크) + Pydantic(데이터 검증/직렬화) 기반
-	- 실행은 `Uvicorn(ASGI 서버)` 같은 서버 위에서 돌아감
+FastAPI는 사실 하나의 거대한 프레임워크가 아니라 
+```
+웹 처리 엔진 + 데이터 검증 엔진
+```
+을 합쳐서 만든 프레임워크입니다
 
-- Starlette
-    - ASGI 기반 비동기 웹 프레임워크
-    - 요청/응답 처리, 라우팅, WebSocket, 미들웨어 등 저수준 기능 담당
-        
-- Pydantic
-    - 입출력 데이터 검증 & 직렬화를 담당
-    - DRF의 `Serializer`랑 같은 역할을 한다고 보면 됨
-        
-⇒ FastAPI는 이 둘을 “프레임워크 수준에서 자연스럽게 묶어놓은 것”이라고 이해하면 편해요.
+```
+FastAPI
+ = Starlette (웹 요청 처리)
+ + Pydantic (데이터 검증)
+```
+그리고 이걸 실행하는 서버가 Uvicorn (웹 서버) 입니다.
+
+DRF는 `Model → Serializer → View → URL` 이런 흐름입니다.
+즉, 먼저 DB 모델이 있고, 그 모델을 시리얼라이저로 검증/변환하고, 그걸 뷰에서 CRUD로 다루는 방식이에요.
+
+FastAPI는 
+- `/users` 요청이 오면?
+- 요청 body는 어떤 형태인가?
+- 응답 JSON은 어떤 구조인가?
+- 이 요청을 처리할 함수는 무엇인가?
+즉, 먼저 URL과 요청/응답 구조를 설계하고, 그 다음 필요하면 DB를 붙이는 방식이에요.
+`요청 → Pydantic 검증 → 함수 실행 → JSON 응답` 즉, API 자체가 중심이에요.
 
 ###### FastAPI의 핵심 특징 (DRF랑 비교하며)
-| 특징               | FastAPI 설명                                                  | DRF 기준으로 보면…                                    |
-| ---------------- | ----------------------------------------------------------- | ----------------------------------------------- |
-| 빠른 성능            | Starlette 기반 ASGI 프레임워크 + 비동기 처리 지원으로 높은 동시 처리 성능           | WSGI 기반 Django보다 동시 처리량에서 유리한 구조                |
-| 자동 데이터 검증        | `Pydantic` 모델로 요청 바디·쿼리 파라미터·헤더 등을 타입 기반으로 자동 검증            | DRF `Serializer`가 하던 역할                         |
-| 자동 API 문서        | `/docs`(Swagger UI), `/redoc` 자동 생성                         | DRF는 `drf-yasg`, `drf-spectacular` 같은 추가 패키지 필요 |
-| 타입 힌트 적극 활용      | `title: str`, `age: int` 같은 Python 타입 힌트 기반으로 검증 + 문서 자동 생성 | DRF도 가능하지만 FastAPI가 타입 중심 설계                    |
-| 비동기(async/await) | async/await 기반 비동기 처리를 기본 구조로 지원 (외부 API, I/O 작업에서 성능 장점)   | Django 3+부터 async 일부 지원하지만 전체 스택이 완전 async는 아님  |
-| 가벼운 구조           | ORM, 템플릿, Admin 등을 필요할 때 선택적으로 사용하는 마이크로 프레임워크 구조           | Django는 ORM, Admin, Template 등 풀스택 프레임워크        |
+| 비교 항목     | DRF 기준에서의 의미    | FastAPI                                    | DRF                                                      |
+| --------- | --------------- | ------------------------------------------ | -------------------------------------------------------- |
+| 프레임워크 성격  | 무엇을 중심으로 만들어졌는가 | API 중심 프레임워크. 처음부터 REST API 서버를 만들기 좋게 설계됨 | Django 기반 API 확장 프레임워크. Django의 모델/ORM/관리자 기능 위에 API를 붙임 |
+| 개발 출발점    | 어디서부터 시작하나      | 보통 엔드포인트와 요청/응답 설계부터 시작                    | 보통 모델 설계부터 시작하고, 그 위에 Serializer/View/API를 연결            |
+| 핵심 설계 방식  | 무엇을 먼저 생각하게 되나  | 이 URL에서 어떤 JSON을 받을까?                      | "이 모델 데이터를 어떻게 API로 보여줄까?"                               |
+| 데이터 검증    | 입력값 검사 방식       | Pydantic으로 타입 기반 자동 검증                     | Serializer로 필드 검증 및 변환                                   |
+| DB와의 관계   | DB가 기본 포함인가     | 기본 내장 아님. SQLAlchemy, Tortoise 등 선택        | Django ORM이 기본 포함                                        |
+| 관리자 페이지   | 관리자 기능 제공 여부    | 기본 없음                                      | Django Admin 기본 제공                                       |
+| 템플릿 렌더링   | HTML 화면 제작과의 관계 | 가능은 하지만 주 목적은 아님                           | Django Template와 자연스럽게 연결 가능                             |
+| 문서화       | API 문서 생성       | `/docs`, `/redoc` 자동 제공                    | 별도 패키지 추가 필요                                             |
+| 비동기 처리    | async 지원 정도     | async/await 중심 설계                          | 일부 가능하지만 전체 구조는 Django 중심                                |
+| 성능 구조     | 동시 요청 처리        | 가볍고 빠른 API 서버에 유리                          | 기능은 풍부하지만 상대적으로 무거움                                      |
+| 프로젝트 느낌   | 실제 개발 감각        | 필요한 것만 조립하는 느낌                             | 이미 많은 기능이 갖춰진 큰 프레임워크 안에서 개발하는 느낌                        |
+| 초보자 학습 느낌 | 배우기 쉬운 방향       | 단순 API는 빠르게 이해 가능, 대신 구조를 스스로 정해야 함        | 규칙이 잘 잡혀 있어 큰 웹서비스 흐름 배우기에 좋음                            |
 
-언제 FastAPI를 쓰면 좋은가?
+### 언제 FastAPI를 쓰면 좋은가?
 - React/Vue 같은 프론트의 백엔드 API 서버
 - AI/ML 모델 서빙용 API 서버 (모델 호출 → JSON 응답)
 - 모바일 앱/프론트엔드 전용 REST/GraphQL 백엔드
@@ -53,23 +69,38 @@ FastAPI 내부 구성
 |`APITestCase`, `APIClient`|`TestClient`, `pytest` + `httpx`|유사한 방식으로 API 테스트 가능|
 |`Request`, `Response`|`fastapi.Request`, `fastapi.Response`|요청 정보 접근/응답 헤더 조작 등 동일 개념|
 
-DRF → FastAPI로 생각할 핵심:
-> Serializer = Pydantic 모델,  
-> APIView/ViewSet = `@app.get/post` 경로 함수
-
-###### Django가 여전히 우위인 부분
-|Django 기능|FastAPI에서 대체 가능?|이유/설명|
+###### Django가 더 편한 부분
+|기능|Django|FastAPI|
 |---|---|---|
-|템플릿 렌더링 (`render`, `templates/`)|⭕ / ❌ (별도 라이브러리 필요)|Jinja2 연결하면 가능하지만, 기본 철학은 API 전용|
-|ORM (`models.py`, QuerySet)|❌ 직접 제공 안 함|SQLAlchemy, Tortoise ORM 등 외부 라이브러리 사용|
-|Admin 사이트 (`/admin`)|❌ 없음|Django만의 강력한 장점|
-|풀스택 웹서비스 구조|❌|FastAPI는 “백엔드 API” 역할에 집중|
+|HTML 화면 만들기|기본 기능 있음|기본 기능 없음|
+|관리자 페이지|자동 제공|없음|
+|데이터베이스 관리|Django ORM|외부 라이브러리 필요|
+|게시판/쇼핑몰 같은 웹서비스|만들기 쉬움|직접 구조를 많이 만들어야 함|
 
-그래서:
-- “관리자 페이지 + 템플릿 기반 페이지 + Admin으로 CRUD 훑기” → Django/DRF
-- “AI API, 모바일/SPA용 JSON API, 고성능 백엔드” → FastAPI
-이렇게 용도를 나눠서 설명해주면 학생들이 잘 이해합니다.
+### 그래서 이렇게 나누면 좋습니다.
+Django / DRF
+✔ 관리자 페이지 필요  
+✔ HTML 웹사이트 만들기  
+✔ 게시판 / 쇼핑몰 / 커뮤니티  
+✔ 데이터 관리 화면 필요
+```
+쇼핑몰  
+블로그  
+커뮤니티  
+관리자 시스템
+```
 
+FastAPI
+✔ 모바일 앱 API  
+✔ React / Vue 같은 프론트엔드  
+✔ AI 모델 서버  
+✔ 빠른 API 서버
+```
+AI 추천 서버  
+챗봇 API  
+모바일 앱 백엔드  
+React + API 서버
+```
 
 예시 코드로 감 잡기 (DRF vs FastAPI)
 DRF Serializer vs FastAPI Pydantic
