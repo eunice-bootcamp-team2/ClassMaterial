@@ -17,11 +17,11 @@ CORS 차단이 발생하는 상황:
 차단 발생 조건은?
 브라우저는 다음 중 하나라도 다르면 "다른 Origin"으로 판단합니다:
 
-| 항목       | 설명            | 예시                                                   |
-| -------- | ------------- | ---------------------------------------------------- |
-| 프로토콜   . | http vs https | ❌ `http://localhost:8000` ≠ `https://localhost:8000` |
-| 도메인      | 도메인이 다름       | ❌ `http://localhost` ≠ `http://127.0.0.1`            |
-| 포트       | 포트 번호 다름      | ❌ `http://localhost:8000` ≠ `http://localhost:3000`  |
+| 항목      | 설명            | 예시                                                   |
+| ------- | ------------- | ---------------------------------------------------- |
+| 프로토콜    | http vs https | ❌ `http://localhost:8000` ≠ `https://localhost:8000` |
+| 도메인     | 도메인이 다름       | ❌ `http://localhost` ≠ `http://127.0.0.1`            |
+| 포트      | 포트 번호 다름      | ❌ `http://localhost:8000` ≠ `http://localhost:3000`  |
 
 ### 실제 차단 예시 상황:
 
@@ -61,7 +61,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,    # 위에 정의한 출처만 허용
     allow_credentials=True,   # 쿠키, 인증 허용
-    allow_methods=["*"]     # 모든 메서드 허용 (GET, POST, PUT 등)
+    allow_methods=["*"],     # 모든 메서드 허용 (GET, POST, PUT 등)
     allow_headers=["*"]       # 모든 헤더 허용
 )
 
@@ -85,6 +85,10 @@ app.add_middleware(
     
     max_age=600  # 프리플라이트 결과를 브라우저가 600초 동안 캐시
 )
+```
+
+```bash
+uvicorn cors:app --reload
 ```
 
 잘 적용되었는지 확인하기
