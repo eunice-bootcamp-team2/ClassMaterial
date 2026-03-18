@@ -1,4 +1,4 @@
-구조
+예시 구조
 ```
 Client
    │
@@ -6,11 +6,39 @@ Client
    │       └── PostgreSQL (메인 DB)
    │
    └── FastAPI (AI / 비동기 / 실시간 처리)
+   
+   
+DRF    ─┐
+        ├─ PostgreSQL (공유)
+FastAPI ┘   
 ```
 - DB는 DRF가 중심
 - FastAPI는 서빙(서비스 로직 / AI / 처리)
 
-이런 상황일경우 FastAPI 쪽에 DB가 필요한 상황이 있을까요?
+실제 서비스에서는 FastAPI가 별도의 DB를 사용하기도 하지만
+많은 경우 DRF의 메인 DB(PostgreSQL)에 직접 접근하여
+데이터를 조회하거나 처리합니다.
+
+예시 구조
+```
+Client
+   │
+   ├── DRF
+   │     └ PostgreSQL
+   │
+   └── FastAPI
+           │
+           └ PostgreSQL (같은 DB 접근)
+```
+
+예
+```
+FastAPI → 사용자 데이터 조회
+FastAPI → 상품 데이터 조회
+FastAPI → 추천 결과 생성
+```
+
+그렇다면 FastAPI 쪽에 별도의 DB가 필요한 경우는 언제일까요?  
 많지는 않지만 FastAPI쪽에 DB를 둬야 하는 상황을 설명해보겠습니다.
 
 1️⃣ AI 추론 로그 저장

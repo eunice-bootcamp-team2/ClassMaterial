@@ -24,7 +24,14 @@ JSON 결과 반환
 
 쿼리 파라미터란? 웹 주소(URL)에 추가 정보를 넣는 방식으로 주소 끝에 `?키=값` 형식으로 붙습니다. 
 ```
-?key1=value1&key2=value2
+?key3=value1&key2=value2
+```
+
+```json
+{
+	"key3": "value1",
+	"key2": "value2"
+}
 ```
 
 FastAPI 함수에서는 이렇게 사용됩니다:
@@ -33,7 +40,7 @@ from fastapi import FastAPI
 
 app = FastAPI()
 
-@app.get("/search")
+@app.get("/search") # 127.0.0.1:8000/serarch/
 def search(keyword: str, page: int = 1):
     return {
         "검색어": keyword,
@@ -128,13 +135,13 @@ URL 주소 안에 들어가는 값이에요.
 
 즉 URL 안에서 특정 데이터를 식별하는 값입니다.
 
-|개념|DRF|FastAPI|
-|---|---|---|
-|특정 데이터 식별|pk|Path Parameter|
-|URL 예시|`/articles/3/`|`/articles/3`|
-|URL 설정|`<int:pk>`|`{article_id}`|
-|함수 인자|`pk`|`article_id`|
-|목적|특정 데이터 조회|특정 데이터 조회|
+| 개념        | DRF            | FastAPI        |
+| --------- | -------------- | -------------- |
+| 특정 데이터 식별 | pk             | Path Parameter |
+| URL 예시    | `/articles/3/` | `/articles/3`  |
+| URL 설정    | `<int:pk>`     | `{article_id}` |
+| 함수 인자     | `pk`           | `article_id`   |
+| 목적        | 특정 데이터 조회      | 특정 데이터 조회      |
 
 예시 비교코드: 
 DRF 
@@ -324,14 +331,14 @@ uvicorn [파일명 without .py]:[FastAPI 객체 이름] --reload
 - 실시간으로 수정 사항 반영됨
 
 실행코드 예시
-pathParamertersBasic.py
+a/pathParamertersBasic.py
 ```python
 from fastapi import FastAPI
 app = FastAPI()
 ```
 실행시:
 ```bash
-uvicorn pathParamertersBasic:app --reload
+uvicorn a.pathParamertersBasic:app --reload
 ```
 
 main.py

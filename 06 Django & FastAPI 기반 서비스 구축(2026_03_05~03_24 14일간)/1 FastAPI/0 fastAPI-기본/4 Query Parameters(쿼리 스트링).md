@@ -190,7 +190,7 @@ React / Vue / DRF + JS 구조도 동일합니다
 ```
 axios
 ↓
-FastAPI / DRF
+FastAPI(서버1) / DRF(서버2)
 ↓
 JSON
 ↓
@@ -228,7 +228,6 @@ def create_item(request):
         return Response(serializer.data)
 ```
 
-
 Fast API
 ```python
 from fastapi import FastAPI
@@ -236,7 +235,7 @@ from pydantic import BaseModel
 
 app = FastAPI()
 
-class Item(BaseModel):
+class Item(BaseModel): 
     name: str
     price: float
 

@@ -1,4 +1,4 @@
-HTTP Header란?
+### HTTP Header란?
 웹에서 클라이언트(브라우저)와 서버가 통신할 때, 요청(Request)과 응답(Response)에 포함되어 함께 전송되는 부가 정보입니다.
 
 쉽게 이해하면?

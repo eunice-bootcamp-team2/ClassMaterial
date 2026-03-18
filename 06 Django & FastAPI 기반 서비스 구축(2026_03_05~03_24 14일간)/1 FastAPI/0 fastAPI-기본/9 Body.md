@@ -60,6 +60,16 @@ async def create_item(item: Item): # 👈 이 item은 body에서 오는 것!
 ```
 
 ```
+DRF: 클라이언트 JSON -> serializer -> views -> models -> views -> serializer -> 딕셔너리 데이터 -> JSON 응답
+
+FastAPI: 클라이언트 JSON -> Pydantic -> view -> 처리 로직 -> 딕셔너리 데이터 -> JSON 응답
+```
+
+```
+DRF는 Serializer가 직렬화/역직렬화를 담당하고, FastAPI는 Pydantic이 그 역할을 담당한다.
+```
+
+```
 item: Item
 ```
 이 의미는 클라이언트가 Body로 보낸 JSON 데이터를 
@@ -151,9 +161,9 @@ class User(BaseModel):
 # -----------------------------
 @app.put("/items/{item_id}")
 async def update_item(
-    item_id: int,             # URL에서 받는 값
-    item: Item,               # body의 item 데이터 검증 + Python 객체 변환 (역직렬화)
-    user: User,               # body의 user 데이터 검증 + Python 객체 변환 (역직렬화)
+    item_id: int,           # URL에서 받는 값
+    item: Item,             # body의 item 데이터 검증 + Python 객체 변환 (역직렬화)
+    user: User,             # body의 user 데이터 검증 + Python 객체 변환 (역직렬화)
     importance: Annotated[int, Body()] # body의 importance 값 검증 + Python 객체 변환
 ):
 	# Python 객체를 JSON으로 직렬화하여 응답

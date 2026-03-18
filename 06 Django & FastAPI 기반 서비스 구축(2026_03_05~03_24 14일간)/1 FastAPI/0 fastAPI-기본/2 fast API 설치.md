@@ -19,7 +19,7 @@ source .venv/bin/activate
 
 가상환경 안에서 fast api 설치:
 ```bash
-uv pip install fastapi uvicorn numpy pandas scikit-learn joblib python-multipart
+uv pip install fastapi uvicorn
 ```
 
 ```bash
@@ -30,7 +30,6 @@ uv pip freeze > requirements.txt
 | ------------------------------------------------------------------ | ---------------- |
 | `uv pip install fastapi`                                           | FastAPI 핵심만 설치   |
 | `uv pip install fastapi uvicorn`                                   | FastAPI 실행       |
-| `uv pip install numpy pandas scikit-learn joblib python-multipart` | ML 서빙, 파일 업로드 용도 |
 
 fastAPI 첫 코드 작성: WSL (Ubuntu + VSCode) 기준
 ```bash

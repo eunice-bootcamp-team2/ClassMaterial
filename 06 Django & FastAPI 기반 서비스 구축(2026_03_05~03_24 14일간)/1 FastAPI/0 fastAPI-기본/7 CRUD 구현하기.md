@@ -43,6 +43,9 @@ CRUD 구현실습을 Django와 비교 이해하며 실습하기:
 FastAPI (Pydantic 모델) `app/models/item.py`
 ```python
 # FastAPI 데이터 모델정의
+
+from pydantic import BaseModel
+
 class Item(BaseModel):
     name: str
     description: str | None = None
@@ -151,23 +154,25 @@ async def delete_item(item_id: int):
 ```
 
 ---
-FastAPI Create  `app/routes/item.py`
+`main.py`
 ```python
-from fastapi import APIRouter
-from app.models.item import Item
+from fastapi import FastAPI
+from app.routes import item
 
-router = APIRouter()
+# FastAPI 애플리케이션 생성
+app = FastAPI(
+    title="FastAPI CRUD Example",
+    description="간단한 CRUD 실습 API",
+    version="1.0"
+)
 
-fake_items_db = []
+# 라우터 등록
+app.include_router(item.router)
 
-
-# -----------------------
-# CREATE
-# -----------------------
-@router.post("/items/")
-async def create_item(item: Item):
-    fake_items_db.append(item)
-    return item
+# 테스트용 기본 엔드포인트
+@app.get("/")
+async def root():
+    return {"message": "FastAPI CRUD 서버 실행중"}
 ```
 
 `@app.post("/items/")`
@@ -366,6 +371,8 @@ class ItemDeleteView(generics.DestroyAPIView):
     queryset = Item.objects.all()
     serializer_class = ItemSerializer
 ```
+
+---
 
 실행 명령어
 ```bash
