@@ -4,9 +4,6 @@ cd ~
 mkdir product-review-service
 cd product-review-service
 code -r .
-
-uv venv
-source .venv/bin/activate
 ```
 프로젝트 기본 구조를 만듭니다.
 ```bash
@@ -14,6 +11,15 @@ mkdir backend
 mkdir ai-server  
 mkdir worker  
 mkdir docker
+
+cd ~/product-review-service/backend 
+uv venv
+source .venv/bin/activate
+
+# new bash 열어서 작업하기
+cd ~/product-review-service/ai-server
+uv venv
+source .venv/bin/activate
 ```
 bash
 ```
@@ -30,6 +36,7 @@ uv pip install djangorestframework
 uv pip install psycopg2-binary  
 uv pip install pillow  
 uv pip install python-dotenv
+uv pip install django-environ
 ```
 JWT 인증
 ```bash

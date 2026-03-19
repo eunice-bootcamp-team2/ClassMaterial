@@ -64,7 +64,7 @@ DB 저장
 product-review-service/
 │
 ├── backend/                         # Django + DRF (웹 서비스)
-│   │
+│   ├── .venv
 │   ├── manage.py
 │   │
 │   ├── mysite/                      # Django 프로젝트 설정
@@ -135,23 +135,24 @@ product-review-service/
 │   │   │   └── product_update.js
 │   │   └── images/
 │   └── media/
-├── ai-server/                      # FastAPI (AI 서버)
+├── ai-server/    # FastAPI (AI 서버)
+│   ├── .venv
 │   ├── main.py
 │   ├── api/
-│   │   ├── sentiment.py
+│   │   ├── recommend.py
 │   │   └── keyword.py
 │   ├── models/
-│   │   ├── sentiment_model.py
+│   │   ├── recommend_model.py
 │   │   └── keyword_model.py
 │   ├── schemas/
-│   │   ├── sentiment_schema.py
+│   │   ├── recommend_schema.py
 │   │   └── keyword_schema.py
 │   └── services/
-│       └── inference.py
+│       └── recommend_service.py
 ├── worker/                         # Celery Worker
 │   ├── celery.py
 │   └── tasks/
-│       ├── sentiment_task.py
+│       ├── recommend_task.py
 │       └── keyword_task.py
 ├── docker/
 │   ├── django.dockerfile
