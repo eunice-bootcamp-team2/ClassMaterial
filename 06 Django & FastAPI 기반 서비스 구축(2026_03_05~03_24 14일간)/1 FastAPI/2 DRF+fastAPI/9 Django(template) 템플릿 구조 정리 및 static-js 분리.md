@@ -238,8 +238,6 @@ urlpatterns = [
     path("api/me/", MeAPIView.as_view(), name="me-api"),
 ]
 ```
-
-
 ---
 2️⃣ products 
 
@@ -508,7 +506,6 @@ urlpatterns = [
     path("api/", include(router.urls)),
 ]
 ```
-
 ---
 3️⃣ reviews  
 
@@ -1342,7 +1339,7 @@ document.addEventListener("DOMContentLoaded", function () {
                     ${product.image_url ? `<img src="${product.image_url}" alt="${product.name}" class="thumb">` : ""}
                     <h1>${product.name}</h1>
                     <p>${product.description || ""}</p>
-                    <p><strong>${product.price}원</strong></p>
+                    <p><strong>${Number(product.price).toLocaleString()}원</strong></p>
                     <p class="muted">등록일: ${product.created_at || "-"}</p>
                 </div>
             `;

@@ -1474,7 +1474,7 @@ document.addEventListener("DOMContentLoaded", function () {
                 <img src="${product.image_url || ""}" alt="${product.name}" class="thumb">
                 <h3>${product.name}</h3>
                 <p class="muted">${product.description || ""}</p>
-                <p><strong>${product.price}원</strong></p>
+                <p><strong>${Number(product.price).toLocaleString()}원</strong></p>
             </a>
 
             <div class="review-box">

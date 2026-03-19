@@ -411,7 +411,7 @@ class SentimentResponseSerializer(serializers.Serializer):
     )
 ```
 ---
-modes, views, serializer가 있으면 API를 테스트 할수 있는 조건이 완성됩니다.
+### modes, views, serializer가 있으면 API를 테스트 할수 있는 조건이 완성
 
 현재까지 작성된 코드가 잘 구동되는지 curl테스트를 실행합니다
 ```
@@ -451,7 +451,7 @@ curl http://127.0.0.1:8000/products/
 ```bash
 [{"id":1,"name":"테스트 제품","description":"설명입니다","price":"12000.00","image":null,"created_at":"2026-03-07T04:39:43.410695Z"}](product-review-service)
 ```
-
+---
 ### Insomnia test
 
 Review 생성 테스트

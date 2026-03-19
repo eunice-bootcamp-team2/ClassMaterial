@@ -4880,14 +4880,13 @@ ENTER
 CTRL + X
 ```
 
-cron은 기다리기 힘드니 **수동 테스트** 먼저 합니다.
+### cron은 기다리기 힘드니 **수동 테스트** 먼저 합니다.
 ```bash
-/home/youjung/product-review-service/.venv/bin/python \  
-/home/youjung/product-review-service/backend/manage.py scheduled_crawl \  
---limit 3 \  
---review-limit 5 \  
---target-type product \  
->> /home/youjung/product-review-service/logs/crawl.log 2>&1
+/home/youjung/product-review-service/.venv/bin/python \
+/home/youjung/product-review-service/backend/manage.py scheduled_crawl \
+--limit 3 \
+--review-limit 5 \
+--target-type product
 ```
 
 cron이 실행되면 로그가 쌓입니다.
@@ -4895,6 +4894,7 @@ cron이 실행되면 로그가 쌓입니다.
 cat /home/youjung/product-review-service/logs/crawl.log
 ```
 
+### 지금 바로 새로 크롤링하려면
 
 리뷰만 다시 확인하려면 기존 crawling 원본 데이터를 비우고, 다시 review 크롤링만 실행하는 게 제일 깔끔합니다.
 ```bash
@@ -4902,26 +4902,51 @@ python manage.py shell
 ```
 
 ```python
-from apps.crawling.models import CrawlRawData
+from apps.crawling.models import CrawlTarget
 
-print("전체:", CrawlRawData.objects.count())
-print("review:", CrawlRawData.objects.filter(record_type="review").count())
-print("candidate_link:", CrawlRawData.objects.filter(record_type="candidate_link").count())
-print("page_info:", CrawlRawData.objects.filter(record_type="page_info").count())
+targets = [
+    {
+        "site": "danawa",
+        "target_type": "search",
+        "keyword": "수분 보습크림",
+        "title": "다나와 수분크림 검색",
+        "url": "[https://search.danawa.com/dsearch.php?query=%EC%88%98%EB%B6%84%ED%81%AC%EB%A6%BC](https://search.danawa.com/dsearch.php?query=%EC%88%98%EB%B6%84+%EB%B3%B4%EC%8A%B5%ED%81%AC%EB%A6%BC&tab=main)",
+    },
+    {
+        "site": "hwahae",
+        "target_type": "search",
+        "keyword": "수분 보습크림",
+        "title": "화해 수분크림 검색",
+        "url": "[https://www.hwahae.co.kr/search?q=%EC%88%98%EB%B6%84%ED%81%AC%EB%A6%BC&type=goods](https://www.hwahae.co.kr/search?q=%EC%88%98%EB%B6%84%20%EB%B3%B4%EC%8A%B5%ED%81%AC%EB%A6%BC)",
+    },
+    {
+        "site": "glowpick",
+        "target_type": "search",
+        "keyword": "수분 보습크림",
+        "title": "글로우픽 수분크림 검색",
+        "url": "[https://glowpick.co.kr/ranking/search/%EC%88%98%EB%B6%84%ED%81%AC%EB%A6%BC](https://glowpick.co.kr/ranking/search/%EC%88%98%EB%B6%84%20%EB%B3%B4%EC%8A%B5%ED%81%AC%EB%A6%BC)",
+    },
+]
+
+for item in targets:
+    CrawlTarget.objects.update_or_create(
+        url=item["url"],
+        defaults=item,
+    )
+
+print("등록 완료")
+
+exit()
 ```
 여기서 `review`가 0이면 리뷰가 아직 거의 안 들어간 상태일 수 있습니다.
 
-기존 crawling 원본 데이터 전체 삭제
-```python
-from apps.crawling.models import CrawlRawData  
-CrawlRawData.objects.all().delete()  
-print("삭제 완료")
-```
-
 이제 리뷰 테스트 크롤링 다시 실행
 ```bash
-python manage.py test_crawl --limit 1 --review-limit 5
+python manage.py test_crawl --limit 3 --review-limit 10 
+python manage.py test_crawl --limit 3 --review-limit 10  
+python manage.py test_crawl --limit 3 --review-limit 10
 ```
+한번씩 시간을 두고 반복해서 터미널에 위의 명령어를 입력합니다.
 
 다시 shell에서 review 개수 확인
 ```bash
@@ -4929,14 +4954,24 @@ python manage.py shell
 ```
 
 ```python
-from apps.crawling.models import CrawlRawData
+from apps.crawling.models import CrawlRawData, CrawlTarget
 
-print("전체:", CrawlRawData.objects.count())
+print("search target:", CrawlTarget.objects.filter(target_type="search").count())
+print("product target:", CrawlTarget.objects.filter(target_type="product").count())
+
+print("candidate_link:", CrawlRawData.objects.filter(record_type="candidate_link").count())
+print("page_info:", CrawlRawData.objects.filter(record_type="page_info").count())
 print("review:", CrawlRawData.objects.filter(record_type="review").count())
-
-for obj in CrawlRawData.objects.filter(record_type="review")[:5]:
-    print(obj.id, obj.record_type, obj.item_title, obj.raw_text[:100])
 ```
+해석
+- `search target`은 늘었는데 `candidate_link`가 0  
+    → 검색 페이지 파싱이 안 됨
+    
+- `candidate_link`는 생기는데 `product target`이 안 늘어남  
+    → 후보 링크를 상품 타겟으로 넘기는 단계 확인 필요
+    
+- `product target`은 늘었는데 `review`가 0  
+    → 상품 상세 리뷰 파서 문제
 
 ---
 이제 Django 관리자 페이지(admin)에서 확인하시면 됩니다.

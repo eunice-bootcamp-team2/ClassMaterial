@@ -63,103 +63,110 @@ DB 저장
 ```
 product-review-service/
 │
-├── backend/                         # Django + DRF (웹 서비스)
-│   ├── .venv
-│   ├── manage.py
+├── backend/                         # Django + DRF (웹 서비스 서버)
+│   ├── .venv                        # Python 가상환경
+│   ├── manage.py                    # Django 프로젝트 실행/관리 명령어 진입점
 │   │
-│   ├── mysite/                      # Django 프로젝트 설정
-│   │   ├── __init__.py
-│   │   ├── settings.py
-│   │   ├── urls.py
-│   │   ├── asgi.py
-│   │   └── wsgi.py
+│   ├── mysite/                      # Django 프로젝트 설정 폴더
+│   │   ├── __init__.py              # Python 패키지 인식 파일
+│   │   ├── settings.py              # 전체 설정 (DB, JWT, CORS, Celery 등)
+│   │   ├── urls.py                  # 전체 URL 라우팅 (앱 urls 연결)
+│   │   ├── asgi.py                  # 비동기 서버용 설정 (WebSocket 등)
+│   │   ├── celery.py                # Celery 설정 (비동기 작업 연결)
+│   │   └── wsgi.py                  # 배포용 서버 설정 (Gunicorn 등)
 │   │
-│   │
-│   ├── apps/
+│   ├── apps/                        # 기능별 앱 모음 (도메인 기반 구조)
 │   │   │
-│   │   ├── accounts/                # 회원
-│   │   │   ├── models.py
-│   │   │   ├── serializers.py
-│   │   │   ├── views.py
-│   │   │   ├── urls.py
-│   │   │   └── admin.py
-│   │   ├── products/                # 제품
-│   │   │   ├── models.py
-│   │   │   ├── serializers.py
-│   │   │   ├── views.py
-│   │   │   ├── urls.py
-│   │   │   └── admin.py
-│   │   ├── reviews/                 # 리뷰
-│   │   │   ├── models.py
-│   │   │   ├── serializers.py
-│   │   │   ├── views.py
-│   │   │   ├── urls.py
-│   │   │   └── admin.py
-│   │   ├── interactions/            # 좋아요 / 북마크 / 댓글 / 신고
-│   │   │   ├── models.py
-│   │   │   ├── serializers.py
-│   │   │   ├── views.py
-│   │   │   ├── urls.py
-│   │   │   └── admin.py
-│   │   │
-│   │   │
-│   │   └── ai_gateway/              # FastAPI 호출
-│   │       ├── serializers.py
-│   │       ├── views.py
-│   │       ├── urls.py
-│   │       ├── admin.py
-│   │       └── services.py
+│   │   ├── accounts/                # 회원 인증 (회원가입 / 로그인 / JWT)
+│   │   │   ├── models.py            # User 모델 정의
+│   │   │   ├── serializers.py       # 요청/응답 데이터 검증 및 변환
+│   │   │   ├── views.py             # API 로직 (회원가입, 로그인 등)
+│   │   │   ├── urls.py              # accounts 관련 URL
+│   │   │   └── admin.py             # Django 관리자 페이지 등록
 │   │
+│   │   ├── products/                # 상품 관리
+│   │   │   ├── models.py            # 상품 모델 (이름, 가격, 이미지 등)
+│   │   │   ├── serializers.py       # 상품 API 데이터 처리
+│   │   │   ├── views.py             # 상품 CRUD API
+│   │   │   ├── urls.py              # 상품 관련 URL
+│   │   │   └── admin.py             # 관리자 등록
 │   │
-│   ├── templates/                   # Django Template
-│   │   ├── base.html
-│   │   ├── accounts/
+│   │   ├── reviews/                 # 리뷰 시스템
+│   │   │   ├── models.py            # 리뷰 모델 (내용, 평점, 상품 FK 등)
+│   │   │   ├── serializers.py       # 리뷰 데이터 처리
+│   │   │   ├── views.py             # 리뷰 CRUD API
+│   │   │   ├── urls.py              # 리뷰 URL
+│   │   │   └── admin.py             # 관리자 등록
+│   │
+│   │   ├── interactions/            # 유저 상호작용 기능
+│   │   │   ├── models.py            # 좋아요, 북마크, 댓글, 신고 모델
+│   │   │   ├── serializers.py       # 상호작용 데이터 처리
+│   │   │   ├── views.py             # 좋아요/댓글/신고 API
+│   │   │   ├── urls.py              # interactions URL
+│   │   │   └── admin.py             # 관리자 등록
+│   │
+│   │   └── ai_gateway/              # AI 서버(FastAPI) 연결 중간 계층 ⭐
+│   │       ├── serializers.py       # FastAPI로 보낼 데이터 검증
+│   │       ├── views.py             # Django → FastAPI 호출 API
+│   │       ├── urls.py              # AI 관련 URL (embed, similarity, analyze)
+│   │       ├── admin.py             # (필요 시) 관리자 등록
+│   │       ├── tasks.py             # Celery 비동기 작업 정의 (AI 요청)
+│   │       └── services.py          # FastAPI 요청 보내는 HTTP 클라이언트
+│   │
+│   ├── templates/                   # Django HTML 템플릿
+│   │   ├── base.html                # 공통 레이아웃 (header/footer)
+│   │
+│   │   ├── accounts/               # 회원 관련 페이지
 │   │   │   ├── login.html
 │   │   │   └── signup.html
-│   │   ├── products/
-│   │   │   ├── product_create.html
-│   │   │   ├── product_detail.html
-│   │   │   ├── product_list.html
-│   │   │   └── product_update.html
+│   │
+│   │   ├── products/               # 상품 페이지
+│   │   │   ├── product_create.html # 상품 생성 페이지
+│   │   │   ├── product_detail.html # 상품 상세 (리뷰 포함)
+│   │   │   ├── product_list.html   # 상품 목록
+│   │   │   └── product_update.html # 상품 수정
+│   │
 │   │   └── interactions/
-│   │       └── navbar.html
-│   ├── static/
+│   │       └── navbar.html         # 상단 네비게이션 UI
+│   │
+│   ├── static/                     # 정적 파일 (프론트 자원)
 │   │   ├── css/
-│   │   │   └── style.css
-│   │   ├── js/
-│   │   │   ├── api.js
-│   │   │   ├── auth.js
-│   │   │   ├── product_create.js
-│   │   │   ├── product_detail.js
-│   │   │   ├── product_list.js
-│   │   │   └── product_update.js
-│   │   └── images/
-│   └── media/
-├── ai-server/    # FastAPI (AI 서버)
-│   ├── .venv
-│   ├── main.py
-│   ├── api/
-│   │   ├── recommend.py
-│   │   └── keyword.py
-│   ├── models/
-│   │   ├── recommend_model.py
-│   │   └── keyword_model.py
-│   ├── schemas/
-│   │   ├── recommend_schema.py
-│   │   └── keyword_schema.py
-│   └── services/
-│       └── recommend_service.py
-├── worker/                         # Celery Worker
-│   ├── celery.py
-│   └── tasks/
-│       ├── recommend_task.py
-│       └── keyword_task.py
-├── docker/
-│   ├── django.dockerfile
-│   ├── fastapi.dockerfile
-│   └── worker.dockerfile
-├── docker-compose.yml
-└── README.md
+│   │   │   └── style.css           # 전체 스타일
+│   │   │
+│   │   ├── js/                     # 프론트 로직 (Axios 기반)
+│   │   │   ├── api.js              # Axios 공통 설정 (BASE_URL 등)
+│   │   │   ├── auth.js             # 로그인 / 토큰 처리
+│   │   │   ├── product_create.js   # 상품 생성 JS
+│   │   │   ├── product_detail.js   # 상품 상세 (리뷰/댓글/AI)
+│   │   │   ├── product_list.js     # 상품 목록 + 리뷰/댓글 렌더링 ⭐
+│   │   │   └── product_update.js   # 상품 수정 JS
+│   │   │
+│   │   └── images/                 # 이미지 파일
+│   │
+│   ├── media/                      # 업로드 파일 (상품 이미지 등)
+│   ├── Dockerfile                  # Django 컨테이너 설정
+│   └── docker-compose.yml          # Django + DB + Redis + Celery 구성
+│
+│
+├── ai-server/                      # FastAPI (AI 추론 서버)
+│   ├── .venv                       # FastAPI 가상환경
+│   ├── main.py                     # FastAPI 앱 시작점 + 라우터 등록
+│
+│   ├── api/                        # API 엔드포인트 정의
+│   │   └── recommend.py            # 유사도 / 추천 API
+│
+│   ├── models/                     # AI 모델 로딩
+│   │   └── recommend_model.py      # 임베딩 모델 로드 (SentenceTransformer)
+│
+│   ├── schemas/                    # 요청/응답 데이터 구조 (Pydantic)
+│   │   └── recommend_schema.py     # embed / similarity 요청 구조
+│
+│   ├── services/                   # 실제 AI 로직 처리
+│   │   └── recommend_service.py    # 임베딩 생성 + 유사도 계산
+│
+│   └── Dockerfile                  # FastAPI 컨테이너 설정
+│
+└── README.md                       # 프로젝트 설명 문서
 ```
 
 ERD 계획

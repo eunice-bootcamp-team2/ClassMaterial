@@ -9,8 +9,6 @@ code -r .
 ```bash
 mkdir backend  
 mkdir ai-server  
-mkdir worker  
-mkdir docker
 
 cd ~/product-review-service/backend 
 uv venv
@@ -25,9 +23,7 @@ bash
 ```
 product-review-service
 ├── backend
-├── ai-server
-├── worker
-└── docker
+└── ai-server
 ```
 Django + DRF 설치
 ```bash

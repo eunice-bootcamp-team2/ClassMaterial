@@ -12,7 +12,9 @@
 
 ---
 ### 모델선정
-`upskyy/e5-small-korean`은 Hugging Face 모델 카드상 문장/문단을 384차원 dense vector로 매핑하는 Sentence Transformer이며, semantic similarity, semantic search, clustering 등에 쓸 수 있다고 되어 있습니다. 최대 시퀀스 길이는 512, 기본 유사도 함수는 cosine similarity입니다. 제품 리뷰 텍스트를 임베딩해서 비슷한 리뷰/비슷한 제품을 찾는 상품 추천용 모델입니다.
+upskyy/e5-small-korean 모델은 문장을 384차원 벡터로 변환하는 Sentence Transformer 모델입니다.  
+  
+이 모델은 직접 추천 결과를 출력하지는 않지만, semantic similarity, semantic search 등에 활용할 수 있으며, 임베딩 벡터와 cosine similarity를 이용하여 비슷한 리뷰나 상품을 찾는 추천 시스템을 구현하는 데 사용할 수 있습니다.
 https://huggingface.co/upskyy/e5-small-korean
 
 작업 순서
@@ -38,15 +40,12 @@ Fast API 임시 디렉토리 구조
 │   ├── main.py
 │   ├── test_embedding.py
 │   ├── api/
-│   │   ├── recommend.py
-│   │   └── keyword.py
+│   │   └──  recommend.py
 │   ├── models/
 │   │   ├── recommend_model.py
-│   │   ├── embedding_model.py
-│   │   └── keyword_model.py
+│   │   └── embedding_model.py
 │   ├── schemas/
-│   │   ├── recommend_schema.py
-│   │   └── keyword_schema.py
+│   │   └── recommend_schema.py
 │   └── services/
 │       └── recommend_service.py  
 ```
@@ -72,12 +71,9 @@ services/__init__.py
 touch main.py \
       test_embedding.py \
       api/sentiment.py \
-      api/keyword.py \
       models/recommend_model.py \
       models/embedding_model.py \
-      models/keyword_model.py \
       schemas/recommend_schema.py \
-      schemas/keyword_schema.py \
       services/recommend_service.py
 ```
 
@@ -194,21 +190,27 @@ config.json: 100%|████████████████████�
 즉, 테스트 목적에서는  
 모델이 아예 이상하게 동작하는 건 아니고, 어느 정도 의미 구분을 하고 있다고 볼 수 있습니다.
 
-
-
-
-
-
-
-
-
-
-
-
-
 `backend/apps/ai_gateway/serializers.py` : 프론트에서 받을 입력 검증
 ```python
+from rest_framework import serializers
 
+
+class EmbeddingRequestSerializer(serializers.Serializer):
+    """
+    여러 문장을 받아 FastAPI /embed 로 전달할 때 사용
+    """
+    texts = serializers.ListField(
+        child=serializers.CharField(),
+        allow_empty=False
+    )
+
+
+class SimilarityRequestSerializer(serializers.Serializer):
+    """
+    두 문장을 받아 FastAPI /similarity 로 전달할 때 사용
+    """
+    text1 = serializers.CharField()
+    text2 = serializers.CharField()
 ```
 
 `backend/apps/ai_gateway/services.py` : FastAPI 서버 호출
@@ -275,11 +277,15 @@ class SentimentPredictAPIView(APIView):
 
 `backend/apps/ai_gateway/urls.py`
 ```python
+from django.urls import path
+from .views import EmbeddingAPIView, SimilarityAPIView
 
+urlpatterns = [
+    path("embed/", EmbeddingAPIView.as_view(), name="ai-embed"),
+    path("similarity/", SimilarityAPIView.as_view(), name="ai-similarity")
+]
 ```
 - `/ai/sentiment/`
-- `/ai/keywords/`
-- `/ai/reviews/<id>/analyze/`
 
 ---
 ### FastAPI
@@ -310,7 +316,7 @@ ai-server/
     └── inference.py
 ```
 
-`ai-server/schemas/sentiment_schema.py`
+`ai-server/schemas/sentiment_schema.py` : 요청/응답 데이터 구조
 ```python
 # ai-server/schemas/sentiment_schema.py
 
@@ -327,7 +333,7 @@ class SentimentResponse(BaseModel):
 ```
 
 모델 로딩/추론
-`ai-server/models/sentiment_model.py`
+`ai-server/models/sentiment_model.py` : 모델 로딩
 ```python
 from transformers import pipeline
 
@@ -339,7 +345,7 @@ sentiment_pipeline = pipeline(
 ```
 
 서비스
-`ai-server/services/inference.py`
+`ai-server/services/inference.py` : 실제 추론 로직
 ```python
 from models.sentiment_model import sentiment_pipeline
 
@@ -354,7 +360,7 @@ def predict_sentiment(text: str) -> dict:
 ```
 
 API 라우터
-`ai-server/api/sentiment.py`
+`ai-server/api/sentiment.py` : 엔드포인트 정의
 ```python
 # ai-server/api/sentiment.py
 
@@ -370,10 +376,8 @@ def sentiment_predict(payload: SentimentRequest):
     return predict_sentiment(payload.text)
 ```
 
-`ai-server/main.py`
+`ai-server/main.py` : FastAPI 앱 생성, 라우터 등록
 ```python
-# ai-server/main.py
-
 from fastapi import FastAPI
 from api.sentiment import router as sentiment_router
 
@@ -383,30 +387,12 @@ app.include_router(sentiment_router)
 ```
 ---
 ```
-POST /ai/sentiment/
-POST /ai/keywords/
-POST /ai/reviews/3/analyze/
+- POST /ai/embed/  
+- POST /ai/similarity/  
 ```
 Django 내부에서 이런 FastAPI 주소를 호출
 ```
 POST http://127.0.0.1:8001/api/v1/sentiment/predict
-POST http://127.0.0.1:8001/api/v1/keywords/extract
-```
-
-`ai-server/urls.py`
-```python
-from django.urls import path
-from .views import (
-    SentimentAPIView,
-    KeywordAPIView,
-    ReviewAnalyzeAPIView,
-)
-
-urlpatterns = [
-    path("sentiment/", SentimentAPIView.as_view(), name="ai-sentiment"),
-    path("keywords/", KeywordAPIView.as_view(), name="ai-keywords"),
-    path("reviews/<int:review_id>/analyze/", ReviewAnalyzeAPIView.as_view(), name="ai-review-analyze"),
-]
 ```
 
 즉,
