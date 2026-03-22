@@ -7,6 +7,35 @@ ERD 기반으로 실제 Django 모델을 각 앱에 작성하고 → 마이그�
 4️⃣ interactions  
 5️⃣ ai_gateway (모델 없음)
 
+### 모델 설계 의도
+모델 구조는 다음과 같은 목적을 기반으로 설계되었습니다.
+- User → Review → Product 관계를 통해 사용자 중심 리뷰 시스템 구성
+- ReviewImage를 분리하여 리뷰당 여러 이미지 업로드 가능하도록 설계
+- ReviewAI를 OneToOne으로 분리하여 AI 분석 결과를 별도로 관리
+- interactions 앱을 분리하여 좋아요, 북마크, 댓글, 신고 기능을 확장 가능하게 구성
+
+이 구조를 통해 서비스 확장 시에도 모델 변경 없이 기능 추가가 가능하도록 설계하였습니다.
+
+### 데이터 흐름 구조
+```
+User → Review → Product 관계를 중심으로 데이터가 연결됩니다.
+```
+
+- 사용자는 제품(Product)에 대해 리뷰(Review)를 작성
+- 리뷰에는 이미지(ReviewImage)가 여러 개 연결될 수 있음
+- 리뷰 생성 후 AI 분석 결과는 ReviewAI에 저장
+- 다른 사용자는 리뷰에 대해 좋아요, 북마크, 댓글, 신고 가능
+
+즉, 모든 상호작용은 Review를 중심으로 이루어지는 구조입니다.
+
+### 삭제 정책 (on_delete)  
+현재 모든 ForeignKey는 CASCADE로 설정되어 있습니다.  
+  
+- User 삭제 → 해당 유저의 Review, Like, Comment 모두 삭제  
+- Review 삭제 → ReviewImage, ReviewAI, Like, Comment 등 모두 삭제  
+  
+이 설정은 데이터 정합성을 유지하기 위한 기본 전략입니다.
+
 ---
 1️⃣ accounts models
 
@@ -20,7 +49,6 @@ class User(AbstractUser):
     """
     사용자 모델
     """
-
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
@@ -39,28 +67,11 @@ class Product(models.Model):
     """
     제품 모델
     """
-
     name = models.CharField(max_length=255)
-
-    description = models.TextField(
-        blank=True,
-        null=True
-    )
-
-    price = models.DecimalField(
-        max_digits=10,
-        decimal_places=2
-    )
-
-    image = models.ImageField(
-        upload_to="products/",
-        blank=True,
-        null=True
-    )
-
-    created_at = models.DateTimeField(
-        auto_now_add=True
-    )
+    description = models.TextField(blank=True,null=True)
+    price = models.DecimalField(max_digits=10,decimal_places=2)
+    image = models.ImageField(upload_to="products/",blank=True,null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
         return self.name
@@ -83,34 +94,13 @@ class Review(models.Model):
     """
     제품 리뷰
     """
-
-    user = models.ForeignKey(
-        User,
-        on_delete=models.CASCADE,
-        related_name="reviews"
-    )
-
-    product = models.ForeignKey(
-        Product,
-        on_delete=models.CASCADE,
-        related_name="reviews"
-    )
-
+    user = models.ForeignKey(User,on_delete=models.CASCADE,related_name="reviews")
+    product = models.ForeignKey(Product,on_delete=models.CASCADE,related_name="reviews")
     content = models.TextField()
-
     rating = models.IntegerField()
-
-    is_public = models.BooleanField(
-        default=True
-    )
-
-    created_at = models.DateTimeField(
-        auto_now_add=True
-    )
-
-    updated_at = models.DateTimeField(
-        auto_now=True
-    )
+    is_public = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
 
     def __str__(self):
         return f"{self.product} - {self.user}"
@@ -118,43 +108,18 @@ class Review(models.Model):
 
 class ReviewImage(models.Model):
 
-    review = models.ForeignKey(
-        Review,
-        on_delete=models.CASCADE,
-        related_name="images"
-    )
-
-    image = models.ImageField(
-        upload_to="reviews/"
-    )
-
-    created_at = models.DateTimeField(
-        auto_now_add=True
-    )
+    review = models.ForeignKey(Review,on_delete=models.CASCADE,related_name="images")
+    image = models.ImageField(upload_to="reviews/")
+    created_at = models.DateTimeField(auto_now_add=True)
     
 
 class ReviewAI(models.Model):
 
-    review = models.OneToOneField(
-        Review,
-        on_delete=models.CASCADE,
-        related_name="ai_result"
-    )
-
-    sentiment = models.CharField(
-        max_length=50
-    )
-
+    review = models.OneToOneField(Review,on_delete=models.CASCADE,related_name="ai_result")
+    sentiment = models.CharField(max_length=50)
     confidence = models.FloatField()
-
-    keywords = models.JSONField(
-        blank=True,
-        null=True
-    )
-
-    created_at = models.DateTimeField(
-        auto_now_add=True
-    )
+    keywords = models.JSONField(blank=True,null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
 ```
 ---
 4️⃣ interactions  models
@@ -172,20 +137,9 @@ User = settings.AUTH_USER_MODEL
 
 class ReviewLike(models.Model):
 
-    user = models.ForeignKey(
-        User,
-        on_delete=models.CASCADE
-    )
-
-    review = models.ForeignKey(
-        Review,
-        on_delete=models.CASCADE,
-        related_name="likes"
-    )
-
-    created_at = models.DateTimeField(
-        auto_now_add=True
-    )
+    user = models.ForeignKey(User,on_delete=models.CASCADE)
+    review = models.ForeignKey(Review,on_delete=models.CASCADE,related_name="likes")
+    created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
         unique_together = ("user", "review")
@@ -193,62 +147,25 @@ class ReviewLike(models.Model):
        
 class ReviewBookmark(models.Model):
 
-    user = models.ForeignKey(
-        User,
-        on_delete=models.CASCADE
-    )
-
-    review = models.ForeignKey(
-        Review,
-        on_delete=models.CASCADE,
-        related_name="bookmarks"
-    )
-
-    created_at = models.DateTimeField(
-        auto_now_add=True
-    )
+    user = models.ForeignKey(User,on_delete=models.CASCADE)
+    review = models.ForeignKey(Review,on_delete=models.CASCADE,related_name="bookmarks")
+    created_at = models.DateTimeField(auto_now_add=True)
     
 
 class ReviewComment(models.Model):
 
-    user = models.ForeignKey(
-        User,
-        on_delete=models.CASCADE
-    )
-
-    review = models.ForeignKey(
-        Review,
-        on_delete=models.CASCADE,
-        related_name="comments"
-    )
-
+    user = models.ForeignKey(User,on_delete=models.CASCADE)
+    review = models.ForeignKey(Review,on_delete=models.CASCADE,related_name="comments")
     content = models.TextField()
-
-    created_at = models.DateTimeField(
-        auto_now_add=True
-    )
+    created_at = models.DateTimeField(auto_now_add=True)
     
 
 class ReviewReport(models.Model):
 
-    user = models.ForeignKey(
-        User,
-        on_delete=models.CASCADE
-    )
-
-    review = models.ForeignKey(
-        Review,
-        on_delete=models.CASCADE,
-        related_name="reports"
-    )
-
-    reason = models.CharField(
-        max_length=255
-    )
-
-    created_at = models.DateTimeField(
-        auto_now_add=True
-    )
+    user = models.ForeignKey(User,on_delete=models.CASCADE)
+    review = models.ForeignKey(Review,on_delete=models.CASCADE,related_name="reports")
+    reason = models.CharField(max_length=255)
+    created_at = models.DateTimeField(auto_now_add=True)
 ```
 ---
 ### 공통 테스트 : 마이그레이션 테스트

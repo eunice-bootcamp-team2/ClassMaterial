@@ -1,187 +1,121 @@
-### 전체 개발 순서
-
-**1단계**  
-FastAPI에서 모델을 1번만 로딩하는 구조 만들기
-
-**2단계**  
-스키마(Pydantic) 만들기
-
-**3단계**  
-서비스 로직 만들기
-- 임베딩 생성
-- 유사도 계산
-
-**4단계**  
-API 라우터 만들기
-- `/api/v1/recommend/embed`
-- `/api/v1/recommend/similarity`
-
-**5단계**  
-`main.py`에 라우터 연결
-
-**6단계**  
-Swagger에서 테스트
-
-**7단계**  
-그 다음 DRF `ai_gateway`가 FastAPI를 호출하게 연결
-
----
-디렉토리구조
-```bash
-ai-server/
-├── main.py
-├── api/
-├── models/
-│   └── embedding_model.py
-├── schemas/
-├── services/
-└── test_embedding.py
-```
-
-모델 로딩 파일 만들기
-`ai-server/models/embedding_model.py`
+`backend/apps/ai_gateway/serializers.py` : 프론트에서 받을 입력 검증
 ```python
-from sentence_transformers import SentenceTransformer
+from rest_framework import serializers
 
 
-# FastAPI 서버가 뜰 때 모델을 한 번만 메모리에 로딩
-embedding_model = SentenceTransformer("upskyy/e5-small-korean")
-```
-이 구조의 핵심은 아주 단순합니다.
-- `SentenceTransformer(...)`는 무거운 작업입니다.
-- 요청이 올 때마다 다시 만들면 너무 느립니다.
-- 그래서 `models/embedding_model.py`에서 전역 객체로 1회만 로드합니다.
-- 이후 다른 파일에서는 이 `embedding_model`만 import해서 씁니다.
-    
-즉 구조는 이렇게 이해하면 됩니다.
-```python
-models/embedding_model.py
-    ↓
-services/recommend_service.py 에서 import
-    ↓
-api/recommend.py 에서 서비스 함수 호출
-```
-
-현재 단계 체크 포인트
-- FastAPI 프로젝트 안에 `models/embedding_model.py`가 존재
-- `embedding_model = SentenceTransformer("upskyy/e5-small-korean")` 작성 완료
-- 다른 파일에서 import 가능한 상태
-
----
-요청/응답 스키마 만들기
-이제 API가 받을 데이터 형식을 정해야 합니다.
-`ai-server/schemas/recommend_schema.py`
-```python
-from pydantic import BaseModel
-from typing import List
-
-
-class EmbeddingRequest(BaseModel):
-    texts: List[str]
-
-
-class EmbeddingResponse(BaseModel):
-    embeddings: List[List[float]]
-
-
-class SimilarityRequest(BaseModel):
-    text1: str
-    text2: str
-
-
-class SimilarityResponse(BaseModel):
-    similarity: float
-```
-
-스키마를 별도의 파일로 만들면
-- 요청 body 검증
-- Swagger 문서 자동 생성
-- 응답 구조 고정
-- 나중에 DRF에서 호출할 때도 형식이 명확해짐
-예를 들어 `/similarity`에 잘못된 JSON이 오면 FastAPI가 자동으로 422 검증 에러를 내줍니다.
----
-서비스 로직 만들기
-이제 실제 추론 로직을 작성합니다.
-`ai-server/services/recommend_service.py`
-```python
-from sklearn.metrics.pairwise import cosine_similarity
-from models.embedding_model import embedding_model
-
-
-def make_embeddings(texts: list[str]) -> list[list[float]]:
+class EmbeddingRequestSerializer(serializers.Serializer):
     """
-    여러 문장을 받아 임베딩 벡터 리스트로 반환
+    여러 문장을 받아 FastAPI /embed 로 전달할 때 사용
     """
-    vectors = embedding_model.encode(texts)
-    return [vector.tolist() for vector in vectors]
+    texts = serializers.ListField(
+        child=serializers.CharField(),
+        allow_empty=False
+    )
 
 
-def calculate_similarity(text1: str, text2: str) -> float:
+class SimilarityRequestSerializer(serializers.Serializer):
     """
-    두 문장의 cosine similarity 계산
+    두 문장을 받아 FastAPI /similarity 로 전달할 때 사용
     """
-    vectors = embedding_model.encode([text1, text2])
-    score = cosine_similarity([vectors[0]], [vectors[1]])[0][0]
-    return float(score)
+    text1 = serializers.CharField()
+    text2 = serializers.CharField()
 ```
-왜 서비스 레이어를 두는가
-- `api/` : 요청 받기
-- `schemas/` : 입력/출력 형식
-- `services/` : 실제 계산
-- `models/` : 모델 로딩
-    
-이렇게 나누면 나중에  
-`리뷰 추천`, `비슷한 리뷰 검색`, `상품 유사도 계산` 기능을 추가할 때도 편합니다.
+
+`backend/apps/ai_gateway/services.py`
+```python
+import requests
+from django.conf import settings
+
+
+class FastAPIClient:
+    @staticmethod
+    def get_embedding(text: str):
+        response = requests.post(
+            f"{settings.FASTAPI_BASE_URL}/api/v1/recommend/embed",
+            json={"texts": [text]},
+            timeout=10,
+        )
+        response.raise_for_status()
+        return response.json()["embeddings"][0]
+
+    @staticmethod
+    def get_similarity(text1: str, text2: str) -> dict:
+        response = requests.post(
+            f"{settings.FASTAPI_BASE_URL}/api/v1/recommend/similarity",
+            json={
+                "text1": text1,
+                "text2": text2,
+            },
+            timeout=20,
+        )
+        response.raise_for_status()
+        return response.json()
+```
+
+`backend/apps/ai_gateway/views.py`
+```python
+from requests import RequestException
+
+from rest_framework.views import APIView
+from rest_framework.response import Response
+from rest_framework import status
+
+from .serializers import EmbeddingRequestSerializer, SimilarityRequestSerializer
+from .services import FastAPIClient
+
+
+class EmbeddingAPIView(APIView):
+    def post(self, request):
+        serializer = EmbeddingRequestSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        texts = serializer.validated_data["texts"]
+
+        try:
+            # 현재 구조 유지: 한 문장씩 보내서 리스트로 반환
+            embeddings = [FastAPIClient.get_embedding(text) for text in texts]
+            return Response({"embeddings": embeddings}, status=status.HTTP_200_OK)
+        except RequestException as e:
+            return Response(
+                {"detail": f"FastAPI 호출 실패: {str(e)}"},
+                status=status.HTTP_502_BAD_GATEWAY,
+            )
+
+
+class SimilarityAPIView(APIView):
+    def post(self, request):
+        serializer = SimilarityRequestSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        text1 = serializer.validated_data["text1"]
+        text2 = serializer.validated_data["text2"]
+
+        try:
+            result = FastAPIClient.get_similarity(text1, text2)
+            return Response(result, status=status.HTTP_200_OK)
+        except RequestException as e:
+            return Response(
+                {"detail": f"FastAPI 호출 실패: {str(e)}"},
+                status=status.HTTP_502_BAD_GATEWAY,
+            )
+```
+- 요청 받기
+- serializer 검증
+- service 호출
+- 필요하면 DB 저장
 
 ---
-FastAPI 라우터 만들기
-이제 엔드포인트를 만듭니다.
-`ai-server/api/recommend.py`
+`backend/apps/ai_gateway/urls.py`
 ```python
-from fastapi import APIRouter
-from schemas.recommend_schema import (
-    EmbeddingRequest,
-    EmbeddingResponse,
-    SimilarityRequest,
-    SimilarityResponse,
-)
-from services.recommend_service import make_embeddings, calculate_similarity
+from django.urls import path
+from .views import EmbeddingAPIView, SimilarityAPIView
 
-router = APIRouter(prefix="/api/v1/recommend", tags=["recommend"])
-
-
-@router.post("/embed", response_model=EmbeddingResponse)
-def embed_texts(payload: EmbeddingRequest):
-    return {"embeddings": make_embeddings(payload.texts)}
-
-
-@router.post("/similarity", response_model=SimilarityResponse)
-def similarity(payload: SimilarityRequest):
-    return {"similarity": calculate_similarity(payload.text1, payload.text2)}
-```
-
-여기서 열리는 API
-```bash
-POST /api/v1/recommend/embed  
-POST /api/v1/recommend/similarity
+urlpatterns = [
+    path("embed/", EmbeddingAPIView.as_view(), name="ai-embed"),
+    path("similarity/", SimilarityAPIView.as_view(), name="ai-similarity")
+]
 ```
 ---
-main.py 연결
-`ai-server/main.py`
-```python
-from fastapi import FastAPI
-from api.recommend import router as recommend_router
-
-app = FastAPI(title="AI Recommendation Server")
-
-app.include_router(recommend_router)
-
-
-@app.get("/")
-def root():
-    return {"message": "AI server is running"}
-```
-
 서버 실행
 ```bash
 uvicorn main:app --reload --port 8001

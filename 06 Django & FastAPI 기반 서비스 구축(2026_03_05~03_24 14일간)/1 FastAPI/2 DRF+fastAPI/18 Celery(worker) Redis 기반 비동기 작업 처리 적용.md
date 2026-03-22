@@ -1297,6 +1297,31 @@ python manage.py check
 python manage.py showmigrations
 python manage.py migrate
 ```
+---
+build 필요 없는 경우:
+그냥 코드 수정했을때 예를 들어
+- `.py` 수정 (views.py, tasks.py 등)
+- `.html`, `.js`, `.css` 수정
+- 로직 변경
+- print/log 추가
+이 경우에는 그냥 restart만 하면 됩니다.
+```bash
+docker compose restart
+```
+이유:
+- 코드가 volume으로 마운트됨
+- 컨테이너는 이미 실행 중
+- 재시작만 하면 반영됨
+
+### build 해야 하는 경우
+이미지 자체가 바뀌는 경우
+① requirements.txt 변경
+- 라이브러리 추가/삭제
+- 무조건 `docker compose up --build`를 해야 합니다.
+② Dockerfile 수정
+③ Python 버전 변경
+④ 환경변수 구조 변경 (.env)
+⑤ 패키지 설치 방식 변경 (uv / pip 등)
 
 ---
 정상 작동 확인 체크리스트

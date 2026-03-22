@@ -16,7 +16,6 @@ python manage.py dumpdata \
 백업하면 아래와 같은 파일이 추가됩니다.
 ![[Pasted image 20260308150151.png]]
 
-
 2단계. PostgreSQL 드라이버 설치
 PostgreSQL 설정
 ```bash
@@ -124,6 +123,11 @@ DATABASES = {
 
 ```bash
 uv pip install django-environ
+```
+
+`requirements.txt` 갱신
+```
+uv pip freeze > requirements.txt
 ```
 
 `.env`

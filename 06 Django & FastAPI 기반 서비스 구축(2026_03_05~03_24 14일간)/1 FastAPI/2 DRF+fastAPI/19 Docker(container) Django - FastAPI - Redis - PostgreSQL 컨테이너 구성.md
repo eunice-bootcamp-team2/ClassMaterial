@@ -630,3 +630,68 @@ Celery -> DB 저장
 
 최종 결과
 ![[Pasted image 20260319212359.png]]
+
+---
+Docker 단계 이후에는 실행 환경이 더 엄격해 집니다.
+- Django 컨테이너
+- PostgreSQL 컨테이너
+- Redis 컨테이너
+- FastAPI 컨테이너
+- Celery 컨테이너
+
+이때부터는 상단 import가 이런 문제를 만들 수 있습니다.
+- 안 쓰는 크롤러까지 import됨
+- 특정 사이트 의존성 문제 때문에 전체 명령이 죽음
+- 한 사이트 문제로 전체 crawl 명령 실패
+
+예를 들어:
+- 지금은 `hwahae`만 `undetected_chromedriver`를 씀
+- 그런데 상단 import면 danawa만 돌려도 hwahae import가 실행됨
+- 그래서 hwahae 패키지 오류가 danawa까지 막아버림
+
+행 구조에 맞게 “import 방식”은 바꿨어야 합니다.
+- 실행 안정성
+- 의존성 분리
+- 사이트별 독립성
+
+`backend/apps/crawling/services/crawl_service.py`
+```python
+from apps.crawling.services.save_service import save_review_result
+
+
+def crawl_product_review_target(target, review_limit: int = 20) -> dict:
+    """
+    product target에 대해 사이트별 리뷰 collector를 실행하고 저장합니다.
+    """
+
+    if target.site == "danawa":
+        from apps.crawling.collectors.danawa_review_collector import DanawaReviewCollector
+        collector = DanawaReviewCollector()
+
+    elif target.site == "hwahae":
+        from apps.crawling.collectors.hwahae_review_collector import HwahaeReviewCollector
+        collector = HwahaeReviewCollector()
+
+    elif target.site == "glowpick":
+        from apps.crawling.collectors.glowpick_review_collector import GlowpickReviewCollector
+        collector = GlowpickReviewCollector()
+
+    else:
+        raise ValueError(f"지원하지 않는 사이트입니다: {target.site}")
+
+    reviews = collector.collect_reviews(target.url, limit=review_limit)
+    save_result = save_review_result(target, reviews)
+
+    return {
+        "review_count": save_result["review_count"],
+        "created_count": save_result["created_count"],
+        "updated_count": save_result["updated_count"],
+    }
+```
+이 구조의 장점은:
+- danawa일 때 danawa만 import
+- hwahae일 때만 hwahae import
+- glowpick일 때만 glowpick import
+
+즉 지연 import(lazy import)로 바꿔야 합니다.
+다시 말해서 12번 단계에서는 사이트별 collector를 상단 import해도 큰 문제가 없었지만, 19번 이후 Docker 기반 멀티서비스 환경으로 전환되면서 특정 collector의 의존성 문제가 전체 크롤링 명령을 막을 수 있었습니다. 이를 방지하기 위해 `crawl_service.py`에서 사이트별 collector를 함수 내부에서 지연 import하도록 수정하였습니다.

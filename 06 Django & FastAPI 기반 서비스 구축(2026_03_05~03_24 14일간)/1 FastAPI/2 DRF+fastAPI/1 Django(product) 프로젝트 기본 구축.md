@@ -205,7 +205,48 @@ python manage.py runserver
 ```
 
 ---
+1단계 (초기 프로젝트) : 자동 포맷, 공백 정리
+
+설치
+```bash
+uv pip install pre-commit
+```
+
+`requirements.txt`
+```
+uv pip freeze > requirements.txt
+```
+
 pre-commit-config.yaml 작성
 ```yaml
+repos:
+  # 1️⃣ 코드 자동 포맷 
+  - repo: https://github.com/psf/black
+    rev: 24.3.0
+    hooks:
+      - id: black
+        language_version: python3
 
+  # 2️⃣ 기본적인 코드 정리
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.6.0
+    hooks:
+      - id: trailing-whitespace      # 불필요한 공백 제거
+      - id: end-of-file-fixer        # 파일 끝 개행 자동 추가
+      - id: check-yaml               # yaml 문법 체크 (docker, github actions 대비)
+      - id: check-added-large-files  # 너무 큰 파일 커밋 방지
 ```
+---
+github 레파지토리 생성후
+```bash
+git init
+pre-commit install
+pre-commit run --all-files
+git add .
+git commit -m "chore: pre-commit 설정 및 코드 포맷 적용"
+git remote add origin https://github.com/USERNAME/REPO.git
+git branch -M main
+git push -u origin main
+```
+
+

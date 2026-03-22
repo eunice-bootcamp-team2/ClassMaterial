@@ -98,6 +98,11 @@ apps/crawling/
 ```bash
 uv pip install beautifulsoup4 lxml requests
 ```
+
+requirements.txt 생성
+```bash
+uv pip freeze > requirements.txt
+```
 ---
 ### 2단계: DB 테이블 구조 만들기
 A. 크롤링 대상 링크 테이블
@@ -3139,7 +3144,7 @@ BeautifulSoup 파싱
 ```
 
 먼저 Selenium 설치
-```python
+```bash
 uv pip install selenium webdriver-manager
 uv pip install undetected-chromedriver
 sudo apt install python3-distutils
@@ -3147,6 +3152,11 @@ uv pip install --upgrade setuptools
 uv pip install packaging
 uv pip install packaging
 sudo apt install google-chrome-stable
+```
+
+`requirements.txt` 갱신
+```
+uv pip freeze > requirements.txt
 ```
 
 `test_selenium_reviews1.py` 테스트용 Selenium 코드
@@ -4882,11 +4892,7 @@ CTRL + X
 
 ### cron은 기다리기 힘드니 **수동 테스트** 먼저 합니다.
 ```bash
-/home/youjung/product-review-service/.venv/bin/python \
-/home/youjung/product-review-service/backend/manage.py scheduled_crawl \
---limit 3 \
---review-limit 5 \
---target-type product
+python manage.py scheduled_crawl --limit 3 --review-limit 5 --target-type product
 ```
 
 cron이 실행되면 로그가 쌓입니다.

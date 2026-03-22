@@ -55,6 +55,11 @@ Fast API 임시 디렉토리 구조
 uv pip install fastapi uvicorn sentence-transformers torch
 ```
 
+`requirements.txt` 갱신
+```
+uv pip freeze > requirements.txt
+```
+
 ```bash
 cd ai-server
 mkdir -p api \
@@ -70,22 +75,40 @@ services/__init__.py
 
 touch main.py \
       test_embedding.py \
-      api/sentiment.py \
       models/recommend_model.py \
       models/embedding_model.py \
       schemas/recommend_schema.py \
       services/recommend_service.py
 ```
 
-
-1차 테스트: 파이썬 파일 단독 실행: 모델이 돌아가는지 확인만 합니다.
+모델 로딩 파일 만들기
 `ai-server/models/embedding_model.py`
 ```python
 from sentence_transformers import SentenceTransformer
 
-# 전역에서 1회 로드
+
+# FastAPI 서버가 뜰 때 모델을 한 번만 메모리에 로딩
 embedding_model = SentenceTransformer("upskyy/e5-small-korean")
 ```
+이 구조의 핵심은 아주 단순합니다.
+- `SentenceTransformer(...)`는 무거운 작업입니다.
+- 요청이 올 때마다 다시 만들면 너무 느립니다.
+- 그래서 `models/embedding_model.py`에서 전역 객체로 1회만 로드합니다.
+- 이후 다른 파일에서는 이 `embedding_model`만 import해서 씁니다.
+    
+즉 구조는 이렇게 이해하면 됩니다.
+```python
+models/embedding_model.py
+    ↓
+services/recommend_service.py 에서 import
+    ↓
+api/recommend.py 에서 서비스 함수 호출
+```
+
+현재 단계 체크 포인트
+- FastAPI 프로젝트 안에 `models/embedding_model.py`가 존재
+- `embedding_model = SentenceTransformer("upskyy/e5-small-korean")` 작성 완료
+- 다른 파일에서 import 가능한 상태
 
 `ai-server/test_embedding.py`
 ```python
@@ -190,211 +213,139 @@ config.json: 100%|████████████████████�
 즉, 테스트 목적에서는  
 모델이 아예 이상하게 동작하는 건 아니고, 어느 정도 의미 구분을 하고 있다고 볼 수 있습니다.
 
-`backend/apps/ai_gateway/serializers.py` : 프론트에서 받을 입력 검증
+---
+요청/응답 스키마 만들기
+이제 API가 받을 데이터 형식을 정해야 합니다.
+`ai-server/schemas/recommend_schema.py`
 ```python
-from rest_framework import serializers
+from pydantic import BaseModel
+from typing import List
 
 
-class EmbeddingRequestSerializer(serializers.Serializer):
-    """
-    여러 문장을 받아 FastAPI /embed 로 전달할 때 사용
-    """
-    texts = serializers.ListField(
-        child=serializers.CharField(),
-        allow_empty=False
-    )
+class EmbeddingRequest(BaseModel):
+    texts: List[str]
 
 
-class SimilarityRequestSerializer(serializers.Serializer):
-    """
-    두 문장을 받아 FastAPI /similarity 로 전달할 때 사용
-    """
-    text1 = serializers.CharField()
-    text2 = serializers.CharField()
+class EmbeddingResponse(BaseModel):
+    embeddings: List[List[float]]
+
+
+class SimilarityRequest(BaseModel):
+    text1: str
+    text2: str
+
+
+class SimilarityResponse(BaseModel):
+    similarity: float
 ```
 
-`backend/apps/ai_gateway/services.py` : FastAPI 서버 호출
-```python
-import requests
-from django.conf import settings
-
-
-class FastAPIClient:
-    """
-    FastAPI AI 서버 호출용 클라이언트
-    """
-
-    @staticmethod
-    def analyze_sentiment(text: str) -> dict:
-        url = f"{settings.FASTAPI_BASE_URL}/api/v1/sentiment/predict"
-
-        payload = {
-            "text": text
-        }
-
-        response = requests.post(url, json=payload, timeout=10)
-        response.raise_for_status()
-        return response.json()
-```
-
-`backend/apps/ai_gateway/views.py`
-```python
-from rest_framework.views import APIView
-from rest_framework.response import Response
-from rest_framework import status
-
-from .services import FastAPIClient
-
-
-class SentimentPredictAPIView(APIView):
-    """
-    Django -> FastAPI 감정분석 요청
-    """
-
-    def post(self, request):
-        text = request.data.get("text")
-
-        if not text:
-            return Response(
-                {"detail": "text 값이 필요합니다."},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-
-        try:
-            result = FastAPIClient.analyze_sentiment(text)
-            return Response(result, status=status.HTTP_200_OK)
-
-        except Exception as e:
-            return Response(
-                {"detail": f"FastAPI 호출 실패: {str(e)}"},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
-```
-- 요청 받기
-- serializer 검증
-- service 호출
-- 필요하면 DB 저장
-
-`backend/apps/ai_gateway/urls.py`
-```python
-from django.urls import path
-from .views import EmbeddingAPIView, SimilarityAPIView
-
-urlpatterns = [
-    path("embed/", EmbeddingAPIView.as_view(), name="ai-embed"),
-    path("similarity/", SimilarityAPIView.as_view(), name="ai-similarity")
-]
-```
-- `/ai/sentiment/`
+스키마를 별도의 파일로 만들면
+- 요청 body 검증
+- Swagger 문서 자동 생성
+- 응답 구조 고정
+- 나중에 DRF에서 호출할 때도 형식이 명확해짐
+예를 들어 `/similarity`에 잘못된 JSON이 오면 FastAPI가 자동으로 422 검증 에러를 내줍니다.
 
 ---
-### FastAPI
-
-폴더 및 파일 생성
-```bash
-cd ../ai-server
-mkdir -p api schemas models services
-```
-
-```bash
-touch api/sentiment.py \
-schemas/sentiment_schema.py \
-models/sentiment_model.py \
-services/inference.py \
-```
-
-```
-ai-server/
-├── main.py
-├── api/
-│   └── sentiment.py
-├── schemas/
-│   └── sentiment_schema.py
-├── models/
-│   └── sentiment_model.py
-└── services/
-    └── inference.py
-```
-
-`ai-server/schemas/sentiment_schema.py` : 요청/응답 데이터 구조
+서비스 로직 만들기
+이제 실제 추론 로직을 작성합니다.
+`ai-server/services/recommend_service.py`
 ```python
-# ai-server/schemas/sentiment_schema.py
-
-from pydantic import BaseModel
-
-
-class SentimentRequest(BaseModel):
-    text: str
+from sklearn.metrics.pairwise import cosine_similarity
+from models.embedding_model import embedding_model
 
 
-class SentimentResponse(BaseModel):
-    label: str
-    score: float
+def make_embeddings(texts: list[str]) -> list[list[float]]:
+    """
+    여러 문장을 받아 임베딩 벡터 리스트로 반환
+    """
+    vectors = embedding_model.encode(texts)
+    return [vector.tolist() for vector in vectors]
+
+
+def calculate_similarity(text1: str, text2: str) -> float:
+    """
+    두 문장의 cosine similarity 계산
+    """
+    vectors = embedding_model.encode([text1, text2])
+    score = cosine_similarity([vectors[0]], [vectors[1]])[0][0]
+    return float(score)
 ```
+왜 서비스 레이어를 두는가
+- `api/` : 요청 받기
+- `schemas/` : 입력/출력 형식
+- `services/` : 실제 계산
+- `models/` : 모델 로딩
+    
+이렇게 나누면 나중에  
+`리뷰 추천`, `비슷한 리뷰 검색`, `상품 유사도 계산` 기능을 추가할 때도 편합니다.
 
-모델 로딩/추론
-`ai-server/models/sentiment_model.py` : 모델 로딩
+---
+FastAPI 라우터 만들기
+이제 엔드포인트를 만듭니다.
+`ai-server/api/recommend.py`
 ```python
-from transformers import pipeline
-
-
-sentiment_pipeline = pipeline(
-    "sentiment-analysis",
-    model="distilbert-base-uncased-finetuned-sst-2-english"
-)
-```
-
-서비스
-`ai-server/services/inference.py` : 실제 추론 로직
-```python
-from models.sentiment_model import sentiment_pipeline
-
-
-def predict_sentiment(text: str) -> dict:
-    result = sentiment_pipeline(text)[0]
-
-    return {
-        "label": result["label"],
-        "score": float(result["score"])
-    }
-```
-
-API 라우터
-`ai-server/api/sentiment.py` : 엔드포인트 정의
-```python
-# ai-server/api/sentiment.py
-
 from fastapi import APIRouter
-from schemas.sentiment_schema import SentimentRequest, SentimentResponse
-from services.inference import predict_sentiment
+from schemas.recommend_schema import (
+    EmbeddingRequest,
+    EmbeddingResponse,
+    SimilarityRequest,
+    SimilarityResponse,
+)
+from services.recommend_service import make_embeddings, calculate_similarity
 
-router = APIRouter(prefix="/api/v1/sentiment", tags=["sentiment"])
+router = APIRouter(prefix="/api/v1/recommend", tags=["recommend"])
 
 
-@router.post("/predict", response_model=SentimentResponse)
-def sentiment_predict(payload: SentimentRequest):
-    return predict_sentiment(payload.text)
+@router.post("/embed", response_model=EmbeddingResponse)
+def embed_texts(payload: EmbeddingRequest):
+    return {"embeddings": make_embeddings(payload.texts)}
+
+
+@router.post("/similarity", response_model=SimilarityResponse)
+def similarity(payload: SimilarityRequest):
+    return {"similarity": calculate_similarity(payload.text1, payload.text2)}
 ```
 
-`ai-server/main.py` : FastAPI 앱 생성, 라우터 등록
+여기서 열리는 API
+```bash
+POST /api/v1/recommend/embed  
+POST /api/v1/recommend/similarity
+```
+
+---
+main.py 연결
+`ai-server/main.py`
 ```python
 from fastapi import FastAPI
-from api.sentiment import router as sentiment_router
+from api.recommend import router as recommend_router
 
-app = FastAPI(title="AI Server")
+app = FastAPI(title="AI Recommendation Server")
 
-app.include_router(sentiment_router)
+app.include_router(recommend_router)
+
+
+@app.get("/")
+def root():
+    return {"message": "AI server is running"}
 ```
 ---
-```
-- POST /ai/embed/  
-- POST /ai/similarity/  
-```
-Django 내부에서 이런 FastAPI 주소를 호출
-```
-POST http://127.0.0.1:8001/api/v1/sentiment/predict
+서버 실행
+```bash
+uvicorn main:app --reload --port 8001
 ```
 
-즉,
-- 사용자용 URL = Django
-- AI 추론용 내부 URL = FastAPI
+
+
+
+
+
+
+
+
+
+
+
+
+
+
