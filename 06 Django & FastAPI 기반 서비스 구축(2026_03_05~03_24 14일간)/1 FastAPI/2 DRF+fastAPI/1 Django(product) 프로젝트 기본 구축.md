@@ -89,14 +89,14 @@ settings.py 앱 등록
 ```python
 INSTALLED_APPS = [
     # DRF
-    'rest_framework',
+    "rest_framework",
 
     # apps
-    'apps.accounts',
-    'apps.products',
-    'apps.reviews',
-    'apps.interactions',
-    'apps.ai_gateway',
+    "apps.accounts",
+    "apps.products",
+    "apps.reviews",
+    "apps.interactions",
+    "apps.ai_gateway",
 ]
 ```
 
@@ -216,37 +216,202 @@ uv pip install pre-commit
 ```
 uv pip freeze > requirements.txt
 ```
+---
+지금은 레포 1개로 시작하는게 이상적입니다.
+```
+product-review-service/
+├── .git/
+├── .gitignore
+├── .pre-commit-config.yaml      ← 루트용(중계 역할)
+├── backend/
+│   ├── .pre-commit-config.yaml  ← Django 전용
+│   └── ...
+└── ai-server/
+    ├── .pre-commit-config.yaml  ← FastAPI 전용
+    └── ...
+```
+하나의 GitHub repo로 관리하는것이 좋습니다.
 
-pre-commit-config.yaml 작성
+실무 기준 판단 공식
+✔ 레포 1개 (Monorepo) 쓰는 경우
+- 같은 서비스다
+- 같이 배포된다
+- 서로 강하게 의존한다
+- 팀이 작다 (너 + 팀 프로젝트)
+
+✔ 레포 2개 (Multi-repo) 쓰는 경우
+- 완전히 독립 서비스
+- 배포도 따로
+- 팀도 따로
+- API 계약만 공유
+
+예:
+- AI 서버를 다른 회사에도 제공
+- Django 없이도 돌아감
+
+현재 구조
+```
+product-review-service (GitHub repo 1개)
+├── backend/
+│   ├── .pre-commit-config.yaml
+│
+├── ai-server/
+│   ├── .pre-commit-config.yaml
+```
+pre-commit은 2개, repo는 1개
+
+---
+로컬 프로젝트 폴더에서 git 초기화
+```bash
+cd ~/product-review-service
+ls # backend ai-server 이 파일들이 보이는 위치
+git init
+```
+
+기본 브랜치명을 main으로 바꾸기
+```bash
+git branch -M main
+```
+
+`.gitignore` 만들기
+`product-review-service/.gitignore`
+```gitignore
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+
+# Virtual environments
+backend/.venv/
+ai-server/.venv/
+.venv/
+
+# Django
+backend/db.sqlite3
+backend/media/
+backend/staticfiles/
+
+# Environment
+.env
+*.env
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Test / cache
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Logs
+*.log
+```
+
+`backend/.pre-commit-config.yaml` : `backend/` 만 검사하도록 제한함
 ```yaml
 repos:
-  # 1️⃣ 코드 자동 포맷 
   - repo: https://github.com/psf/black
     rev: 24.3.0
     hooks:
       - id: black
-        language_version: python3
+        files: ^backend/.*\.py$
 
-  # 2️⃣ 기본적인 코드 정리
+  - repo: https://github.com/PyCQA/isort
+    rev: 5.13.2
+    hooks:
+      - id: isort
+        files: ^backend/.*\.py$
+
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v4.6.0
     hooks:
-      - id: trailing-whitespace      # 불필요한 공백 제거
-      - id: end-of-file-fixer        # 파일 끝 개행 자동 추가
-      - id: check-yaml               # yaml 문법 체크 (docker, github actions 대비)
-      - id: check-added-large-files  # 너무 큰 파일 커밋 방지
+      - id: trailing-whitespace
+        files: ^backend/
+      - id: end-of-file-fixer
+        files: ^backend/
+      - id: check-yaml
+        files: ^backend/.*\.(yml|yaml)$
+      - id: check-added-large-files
 ```
 ---
+`ai-server/.pre-commit-config.yaml`
+```yml
+repos:
+  - repo: https://github.com/psf/black
+    rev: 24.3.0
+    hooks:
+      - id: black
+        files: ^ai-server/.*\.py$
+
+  - repo: https://github.com/PyCQA/isort
+    rev: 5.13.2
+    hooks:
+      - id: isort
+        files: ^ai-server/.*\.py$
+
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.6.0
+    hooks:
+      - id: trailing-whitespace
+        files: ^ai-server/
+      - id: end-of-file-fixer
+        files: ^ai-server/
+      - id: check-yaml
+        files: ^ai-server/.*\.(yml|yaml)$
+      - id: check-added-large-files
+```
+
+`product-review-service/.pre-commit-config.yaml`
+```yml
+repos:
+  - repo: https://github.com/psf/black
+    rev: 24.3.0
+    hooks:
+      - id: black
+        files: ^(backend|ai-server)/.*\.py$
+
+  - repo: https://github.com/PyCQA/isort
+    rev: 5.13.2
+    hooks:
+      - id: isort
+        files: ^(backend|ai-server)/.*\.py$
+
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.6.0
+    hooks:
+      - id: trailing-whitespace
+        files: ^(backend|ai-server)/
+      - id: end-of-file-fixer
+        files: ^(backend|ai-server)/
+      - id: check-yaml
+        files: ^(backend|ai-server)/.*\.(yml|yaml)$
+      - id: check-added-large-files
+```
+
+- 커밋 대상 파일이 `backend/` 아래면  
+    → `backend/.pre-commit-config.yaml` 기준으로 검사
+- 커밋 대상 파일이 `ai-server/` 아래면  
+    → `ai-server/.pre-commit-config.yaml` 기준으로 검사
+
+즉, 루트 hook 1개가 두 하위 설정을 분기 호출하는 구조입니다.
+
+pre-commit 설치
+```bash
+cd ~/product-review-service  
+uv pip install pre-commit
+```
+
 github 레파지토리 생성후
 ```bash
-git init
-pre-commit install
-pre-commit run --all-files
 git add .
 git commit -m "chore: pre-commit 설정 및 코드 포맷 적용"
 git remote add origin https://github.com/USERNAME/REPO.git
 git branch -M main
 git push -u origin main
 ```
-
-

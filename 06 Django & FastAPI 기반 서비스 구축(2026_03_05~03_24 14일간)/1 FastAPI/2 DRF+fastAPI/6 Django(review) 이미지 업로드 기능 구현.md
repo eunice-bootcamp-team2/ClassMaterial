@@ -267,7 +267,7 @@ class Product(models.Model):
 
 `backend/apps/products/serializers.py`
 ```python
-ffrom rest_framework import serializers
+from rest_framework import serializers
 from .models import Product
 
 
@@ -404,6 +404,7 @@ from .views import (
     ProductListPageView,
     ProductDetailPageView,
     ProductCreatePageView,
+    ProductUpdatePageView
 )
 
 router = DefaultRouter()
@@ -544,6 +545,34 @@ from rest_framework import serializers
 from .models import Review, ReviewImage, ReviewAI
 
 
+class ReviewImageSerializer(serializers.ModelSerializer):
+    """
+    리뷰 이미지 Serializer
+    """
+
+    class Meta:
+        model = ReviewImage
+        fields = [
+            "id",
+            "image",
+            "created_at",
+        ]
+
+
+class ReviewAISerializer(serializers.ModelSerializer):
+    """
+    리뷰 AI 분석 결과 Serializer
+    """
+
+    class Meta:
+        model = ReviewAI
+        fields = [
+            "sentiment",
+            "confidence",
+            "keywords",
+        ]
+        
+        
 class ReviewSerializer(serializers.ModelSerializer):
     """
     리뷰 Serializer
@@ -604,34 +633,6 @@ class ReviewSerializer(serializers.ModelSerializer):
             )
 
         return review
-
-
-class ReviewImageSerializer(serializers.ModelSerializer):
-    """
-    리뷰 이미지 Serializer
-    """
-
-    class Meta:
-        model = ReviewImage
-        fields = [
-            "id",
-            "image",
-            "created_at",
-        ]
-
-
-class ReviewAISerializer(serializers.ModelSerializer):
-    """
-    리뷰 AI 분석 결과 Serializer
-    """
-
-    class Meta:
-        model = ReviewAI
-        fields = [
-            "sentiment",
-            "confidence",
-            "keywords",
-        ]
 ```
 
 `backend/apps/reviews/views.py`
@@ -645,16 +646,16 @@ from .serializers import ReviewSerializer
 
 
 class ReviewViewSet(viewsets.ModelViewSet):
-	"""  
-	리뷰 CRUD API  
-		- GET /reviews/  
-		- GET /reviews/<id>/  
-		- POST /reviews/  
-		- PATCH /reviews/<id>/  
-		- DELETE /reviews/<id>/  
-	  
-	최소 이미지 업로드 테스트용 코드  
-	"""
+    """
+    리뷰 CRUD API
+    - GET /reviews/
+    - GET /reviews/<id>/
+    - POST /reviews/
+    - PATCH /reviews/<id>/
+    - DELETE /reviews/<id>/
+
+    최소 이미지 업로드 테스트용 코드
+    """
 
     queryset = Review.objects.all().order_by("-created_at")
     serializer_class = ReviewSerializer
@@ -739,6 +740,22 @@ if settings.DEBUG:
 서버 실행 전 기본 점검
 ```bash
 python manage.py check
+```
+결과
+```
+(backend) (.venv) youjung@DESKTOP-PJCRMMU:~/product-review-service2/backend$ python manage.py check
+System check identified some issues:
+
+WARNINGS:
+?: (staticfiles.W004) The directory '/home/youjung/product-review-service2/backend/static' in the STATICFILES_DIRS setting does not exist.
+
+System check identified 1 issue (0 silenced).
+(backend) (.venv) youjung@DESKTOP-PJCRMMU:~/product-review-service2/backend$ 
+```
+
+경고가 뜬건 지금은 `static/` 폴더가 없어서 나온 경고이므로 폴더를 미리 만들어도 되고 나중에 만들어도 됩니다.
+```bash
+mkdir static
 ```
 
 마이그레이션

@@ -73,7 +73,7 @@ TEMPLATES = [
 ]
 
 STATICFILES_DIRS = [
-    BASE_DIR / "static",
+  BASE_DIR / "static",
 ]
 ```
 ---
@@ -84,7 +84,7 @@ STATICFILES_DIRS = [
 from django.shortcuts import get_object_or_404
 from django.views.generic import TemplateView
 
-from rest_framework import generics, permissions
+from rest_framework import generics, permissions, status
 from rest_framework.response import Response
 from rest_framework.viewsets import ViewSet
 
@@ -103,7 +103,7 @@ class UserViewSet(ViewSet):
     permission_classes = [permissions.AllowAny]
 
     def list(self, request):
-        users = User.objects.all()
+        users = User.objects.all().order_by("-id")
         serializer = UserSerializer(users, many=True)
         return Response(serializer.data)
 
@@ -116,15 +116,32 @@ class UserViewSet(ViewSet):
 class SignupAPIView(generics.CreateAPIView):
     """
     회원가입 API
+    POST /accounts/api/signup/
     """
 
     serializer_class = SignupSerializer
     permission_classes = [permissions.AllowAny]
 
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        user = serializer.save()
+
+        return Response(
+            {
+                "id": user.id,
+                "username": user.username,
+                "email": user.email,
+                "created_at": user.created_at,
+            },
+            status=status.HTTP_201_CREATED,
+        )
+
 
 class MeAPIView(generics.RetrieveAPIView):
     """
     현재 로그인한 사용자 정보 조회 API
+    GET /accounts/api/me/
     """
 
     serializer_class = UserSerializer
@@ -148,96 +165,51 @@ class LoginPageView(TemplateView):
 class MyPageView(TemplateView):
     template_name = "accounts/mypage.html"
 ```
-
+- 8번파일 → API 동작을 이해하기 위해 직접 `create()`를 커스터마이징함 → `status` 필요
+- 9번파일 → 템플릿 + JS 구조 분리에 집중하면서 API를 기본형으로 단순화 → `status` 제거
+---
 `backend/apps/accounts/urls.py`
 ```python
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
-from rest_framework_simplejwt.views import (
-    TokenObtainPairView,
-    TokenRefreshView,
-)
+from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 
 from .views import (
     UserViewSet,
     SignupAPIView,
     MeAPIView,
-
-    # -------------------------------
-    # [추가] 템플릿 페이지용 View
-    # -------------------------------
     SignupPageView,
     LoginPageView,
     MyPageView,
 )
 
 router = DefaultRouter()
-
-# -----------------------------------
-# [수정] UserViewSet는 API이므로 api/users/ 아래로 들어가게 구성
-# 실제 최종 URL: /accounts/api/users/
-# -----------------------------------
 router.register("users", UserViewSet, basename="user")
 
 urlpatterns = [
     # =================================================
     # Template Page URLs
     # =================================================
-
-    # -----------------------------------
-    # [추가] 회원가입 페이지
-    # 실제 최종 URL: /accounts/signup/
-    # -----------------------------------
     path("signup/", SignupPageView.as_view(), name="signup-page"),
-
-    # -----------------------------------
-    # [추가] 로그인 페이지
-    # 실제 최종 URL: /accounts/login/
-    # -----------------------------------
     path("login/", LoginPageView.as_view(), name="login-page"),
-
-    # -----------------------------------
-    # [추가] 마이페이지
-    # 실제 최종 URL: /accounts/mypage/
-    # -----------------------------------
     path("mypage/", MyPageView.as_view(), name="mypage"),
-
 
     # =================================================
     # API URLs
     # =================================================
-
-    # -----------------------------------
-    # [수정] 기존 UserViewSet는 루트가 아니라 api/ 아래로 이동
-    # 실제 최종 URL: /accounts/api/users/
-    # -----------------------------------
     path("api/", include(router.urls)),
-
-    # -----------------------------------
-    # [수정] 기존 signup/ API는 페이지와 충돌하므로 api/signup/ 로 변경
-    # 실제 최종 URL: /accounts/api/signup/
-    # -----------------------------------
     path("api/signup/", SignupAPIView.as_view(), name="signup-api"),
-
-    # -----------------------------------
-    # [수정] 기존 login/ API는 페이지와 충돌하므로 api/login/ 로 변경
-    # 실제 최종 URL: /accounts/api/login/
-    # -----------------------------------
     path("api/login/", TokenObtainPairView.as_view(), name="token_obtain_pair"),
-
-    # -----------------------------------
-    # [수정] JWT 재발급 API
-    # 실제 최종 URL: /accounts/api/token/refresh/
-    # -----------------------------------
     path("api/token/refresh/", TokenRefreshView.as_view(), name="token_refresh"),
-
-    # -----------------------------------
-    # [수정] 현재 로그인한 사용자 정보 조회 API
-    # 실제 최종 URL: /accounts/api/me/
-    # -----------------------------------
     path("api/me/", MeAPIView.as_view(), name="me-api"),
 ]
 ```
+URL 구조 변경
+- 8번파일: `/accounts/signup/` → API
+- 9번파일: `/accounts/signup/` → HTML 페이지  
+	     `/accounts/api/signup/` → API
+탬플릿과 API 역할분리
+
 ---
 2️⃣ products 
 
@@ -739,7 +711,7 @@ Base html
 </html>
 ```
 
-footer html
+footer html 파일 추가
 `backend/templates/footer.html`
 ```html
 <footer>
@@ -878,7 +850,7 @@ api.interceptors.response.use(
             isRefreshing = true;
 
             try {
-                const response = await axios.post("/api/accounts/token/refresh/", {
+                const response = await axios.post("/accounts/api/token/refresh/", {
                     refresh: refreshToken,
                 });
 
@@ -1016,7 +988,7 @@ window.authUtils = {
 {% endblock %}
 ```
 
-마이페이지 템플릿
+마이페이지 템플릿 : 파일추가
 `backend/templates/accounts/mypage.html`
 ```html
 {% extends "base.html" %}
@@ -1221,6 +1193,8 @@ create js
 document.addEventListener("DOMContentLoaded", function () {
     const form = document.getElementById("productCreateForm");
 
+    if (!form) return;
+
     form.addEventListener("submit", async function (e) {
         e.preventDefault();
 
@@ -1249,10 +1223,10 @@ document.addEventListener("DOMContentLoaded", function () {
         }
 
         try {
-            const response = await axios.post("/products/", formData, {
+            const response = await api.post("/products/api/", formData, {
                 headers: {
-                    "Content-Type": "multipart/form-data"
-                }
+                    "Content-Type": "multipart/form-data",
+                },
             });
 
             alert("상품이 등록되었습니다.");
@@ -1262,9 +1236,10 @@ document.addEventListener("DOMContentLoaded", function () {
 
             if (error.response && error.response.data) {
                 console.log("서버 응답:", error.response.data);
+                alert("상품 등록 실패: " + JSON.stringify(error.response.data));
+            } else {
+                alert("상품 등록에 실패했습니다.");
             }
-
-            alert("상품 등록에 실패했습니다.");
         }
     });
 });
@@ -1388,6 +1363,40 @@ document.addEventListener("DOMContentLoaded", function () {
 
 list html
 `backend/templates/products/product_list.html`
+```js
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}상품 목록{% endblock %}
+
+{% block content %}
+<section class="card">
+    <div class="page-header" style="display:flex; justify-content:space-between; align-items:center;">
+        <h1>상품 목록</h1>
+
+        <div style="display:flex; gap:10px;">
+            <a href="/products/create/" class="btn-primary">상품 등록</a>
+        </div>
+    </div>
+
+    <div id="productList" class="grid"></div>
+
+    <div class="pagination">
+        <button type="button" id="prevBtn">이전</button>
+        <span id="pageInfo">1 페이지</span>
+        <button type="button" id="nextBtn">다음</button>
+    </div>
+</section>
+{% endblock %}
+
+{% block script %}
+<script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+<script src="{% static 'js/product-list.js' %}"></script>
+{% endblock %}
+```
+
+list js
+`backend/static/js/product-list.js`
 ```python
 document.addEventListener("DOMContentLoaded", function () {
     const productList = document.getElementById("productList");
@@ -1464,39 +1473,7 @@ document.addEventListener("DOMContentLoaded", function () {
 });
 ```
 
-list js
-`backend/static/js/product-list.js`
-```js
-{% extends "base.html" %}
-{% load static %}
 
-{% block title %}상품 목록{% endblock %}
-
-{% block content %}
-<section class="card">
-    <div class="page-header" style="display:flex; justify-content:space-between; align-items:center;">
-        <h1>상품 목록</h1>
-
-        <div style="display:flex; gap:10px;">
-            <a href="/products/create/" class="btn-primary">상품 등록</a>
-        </div>
-    </div>
-
-    <div id="productList" class="grid"></div>
-
-    <div class="pagination">
-        <button type="button" id="prevBtn">이전</button>
-        <span id="pageInfo">1 페이지</span>
-        <button type="button" id="nextBtn">다음</button>
-    </div>
-</section>
-{% endblock %}
-
-{% block script %}
-<script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
-<script src="{% static 'js/product-list.js' %}"></script>
-{% endblock %}
-```
 ---
 5️⃣ 수정하기  HTML & JS
 
@@ -2393,4 +2370,43 @@ footer{
         padding: 24px;
     }
 }
+```
+
+서버실행 확인
+```bash
+python manage.py runserver
+```
+
+http://127.0.0.1:8000/products/
+
+---
+변경된 부분을 정리하면 
+8번 회원가입 및 로그인 기능구현과 9번 탬플릿 구조 정리 및 static-js분리 파트에서
+
+SignupAPIView 로직 단순화
+- 8번: `create()` 있음
+- 9번: 없음
+기능 제거가 아니라 설명을 위해 단순화한 것
+
+Login 방식 변화 (JWT 흐름)
+- 8번: 로그인 API 개념
+- 9번: `/api/login/` + JS + 토큰 저장 구조 등장 : 프론트(JS)에서 토큰 처리까지 포함
+9번에서 로그인은 API → JS → 브라우저 저장까지 확장된 것
+
+View 종류 혼합 (APIView vs TemplateView)
+- 어떤 view는 APIView
+- 어떤 view는 TemplateView
+
+왜 view가 두 종류냐?
+- APIView → 데이터 반환(JSON)
+- TemplateView → HTML 렌더링
+
+8번까지:
+```
+백엔드 API 만들기 단계
+```
+
+9번부터:
+```
+API + HTML + JS → 실제 서비스 구조 만들기 단계
 ```
