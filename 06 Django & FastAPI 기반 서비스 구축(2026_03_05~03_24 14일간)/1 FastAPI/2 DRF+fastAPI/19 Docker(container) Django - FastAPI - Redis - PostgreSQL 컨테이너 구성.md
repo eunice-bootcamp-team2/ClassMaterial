@@ -695,3 +695,188 @@ def crawl_product_review_target(target, review_limit: int = 20) -> dict:
 
 즉 지연 import(lazy import)로 바꿔야 합니다.
 다시 말해서 12번 단계에서는 사이트별 collector를 상단 import해도 큰 문제가 없었지만, 19번 이후 Docker 기반 멀티서비스 환경으로 전환되면서 특정 collector의 의존성 문제가 전체 크롤링 명령을 막을 수 있었습니다. 이를 방지하기 위해 `crawl_service.py`에서 사이트별 collector를 함수 내부에서 지연 import하도록 수정하였습니다.
+
+---
+## 1) 기본 위치
+
+항상 먼저 여기로 이동:
+
+cd ~/product-review-service/backend
+
+---
+
+## 2) 컨테이너 실행 / 재빌드
+
+처음 실행:
+
+docker compose up -d
+
+코드/패키지/Dockerfile 변경 후:
+
+docker compose up -d --build
+
+상태 확인:
+
+docker compose ps
+
+로그 보기:
+
+docker compose logs -f web  
+docker compose logs -f celery  
+docker compose logs -f fastapi  
+docker compose logs -f redis  
+docker compose logs -f db
+
+---
+
+## 3) Django 명령어 전부 교체
+
+### 기존 로컬 방식 → Docker 방식
+
+python manage.py check
+
+→
+
+docker compose exec web python manage.py check
+
+python manage.py shell
+
+→
+
+docker compose exec web python manage.py shell
+
+python manage.py migrate
+
+→
+
+docker compose exec web python manage.py migrate
+
+python manage.py makemigrations
+
+→
+
+docker compose exec web python manage.py makemigrations
+
+python manage.py showmigrations
+
+→
+
+docker compose exec web python manage.py showmigrations
+
+python manage.py createsuperuser
+
+→
+
+docker compose exec web python manage.py createsuperuser
+
+python manage.py collectstatic
+
+→
+
+docker compose exec web python manage.py collectstatic --noinput
+
+---
+
+## 4) 크롤링 명령어도 전부 교체
+
+python manage.py test_crawl
+
+→
+
+docker compose exec web python manage.py test_crawl
+
+python manage.py scheduled_crawl --limit 3
+
+→
+
+docker compose exec web python manage.py scheduled_crawl --limit 3
+
+---
+
+## 5) 테스트/관리용 자주 쓰는 명령어
+
+superuser 생성:
+
+docker compose exec web python manage.py createsuperuser
+
+DB shell 대신 Django shell:
+
+docker compose exec web python manage.py shell
+
+앱 체크:
+
+docker compose exec web python manage.py check
+
+마이그레이션:
+
+docker compose exec web python manage.py makemigrations  
+docker compose exec web python manage.py migrate
+
+---
+
+## 6) Postgres 직접 접속도 Docker 기준
+
+docker compose exec db psql -U product_user -d product_db
+
+컨테이너 이름 직접 쓸 때는:
+
+docker exec -it product_review_postgres psql -U product_user -d product_db
+
+---
+
+## 7) Celery / FastAPI 확인
+
+Celery 로그:
+
+docker compose logs -f celery
+
+FastAPI 로그:
+
+docker compose logs -f fastapi
+
+Redis 로그:
+
+docker compose logs -f redis
+
+---
+
+## 8) 앞으로의 원칙
+
+이제부터는:
+
+- 코드 수정: VSCode
+- 서버 실행: Docker
+- manage.py 명령: Docker
+- 크롤링 테스트: Docker
+- superuser 생성: Docker
+
+즉, **로컬에서 `python manage.py ...`는 쓰지 않는 걸로 통일**하면 돼.
+
+---
+
+## 9) 편하게 쓰는 alias 추천
+
+`~/.bashrc` 에 추가:
+
+alias dc='docker compose'  
+alias dj='docker compose exec web python manage.py'
+
+적용:
+
+source ~/.bashrc
+
+그러면 이렇게 짧게 가능:
+
+dj check  
+dj shell  
+dj migrate  
+dj createsuperuser  
+dj test_crawl  
+dj scheduled_crawl --limit 3
+
+---
+
+## 10) superuser 생성 명령 최종본
+
+cd ~/product-review-service/backend  
+docker compose exec web python manage.py createsuperuser

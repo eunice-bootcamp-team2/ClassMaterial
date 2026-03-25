@@ -18,17 +18,167 @@
 - 우선은 페이지 접근 + 상품 링크 후보 추출까지만 구현
 - 나중에 리뷰 본문 추출로 확장
 ---
+자동 크롤링에는 보통 이 4개가 필요합니다.
+1. 무엇을 돌릴지 관리하는 대상 목록
+2. 주기적으로 실행하는 스케줄러
+3. 가져온 데이터를 저장하거나 갱신하는 로직
+4. 실패/성공을 남기는 로그
+---
+전체 구조(각 파일의 역할)
+```
+apps/crawling/
+
+├── collectors/  
+│   ├── danawa_collector.py        
+│   │   → [실제 크롤링 로직] (데이터 수집 담당)
+│   │   → HTML에서 "리뷰" 또는 "상품 데이터" 추출
+│   │
+│   ├── hwahae_collector.py        
+│   │   → [실제 크롤링 로직]
+│   │
+│   └── glowpick_collector.py      
+│       → [실제 크롤링 로직]
+
+├── services/
+│   ├── http.py                    
+│   │   → [크롤링 공통 기능]
+│   │   → 요청(requests), 헤더, timeout 관리
+│   │
+│   ├── parser.py                  
+│   │   → [크롤링 공통 기능]
+│   │   → HTML → 데이터 변환 (BeautifulSoup)
+│   │
+│   ├── crawl_service.py           
+│   │   → ⭐ [자동 크롤링 흐름 제어]
+│   │   → collector 선택 + 전체 실행 orchestration
+│   │
+│   ├── save_service.py            
+│   │   → ⭐ ③ 저장/갱신 로직
+│   │   → create / update / 중복 방지(unique_key)
+│   │
+│   ├── repository.py              
+│   │   → ③ 저장/갱신 로직 (DB 직접 접근)
+│   │   → update_or_create 전용
+│   │
+│   └── target_selector.py         
+│       → ⭐ ① 대상 선택 로직
+│       → 어떤 URL을 이번에 돌릴지 결정 (limit, priority)
+
+├── management/
+│   └── commands/
+│       ├── test_crawl.py          
+│       │   → 수동 테스트용 실행
+│       │
+│       └── scheduled_crawl.py     
+│           → ⭐ ② 스케줄러 실행 진입점
+│           → cron / celery beat에서 호출
+
+├── models.py                      
+│
+│   → ⭐ ① 대상 목록 관리
+│   → CrawlTarget (크롤링 대상 URL 관리)
+│
+│   → ⭐ ③ 저장 데이터 구조
+│   → CrawlRawData (크롤링 결과 저장)
+│
+│   → ⭐ ④ 로그 관리
+│   → CrawlJobLog (성공/실패 기록)
+
+├── admin.py                       
+│   → 관리자에서 대상 / 결과 / 로그 확인
+
+└── tests.py                       
+    → 저장 로직 / 중복 방지 테스트
+```
+
+---
+### 4요소 기준 매핑
+
+① 무엇을 돌릴지 관리 (Target : 대상 선택 로직)
+```
+models.py
+  └── CrawlTarget
+services/target_selector.py
+```
+역할
+- 크롤링 대상 URL 저장
+- 어떤걸 이번에 실행할지 선택
+
+② 주기적으로 실행 (Scheduler)
+```
+management/commands/scheduled_crawl.py
+```
+역할
+- cron / celery beat가 실행
+- 자동으로 크롤링 시작
+
+③ 데이터 저장 / 갱신
+```
+services/save_service.py  
+services/repository.py  
+models.py (CrawlRawData)
+```
+역할
+- 크롤링 결과 DB 저장
+- 중복이면 update
+- 새 데이터면 create
+
+④ 로그 기록
+```
+models.py (CrawlJobLog)  
+management/commands/*.py
+```
+역할
+- 성공/실패 기록
+- 몇 개 처리했는지
+- 에러 메시지 저장
+
+크롤링 흐름 (자동 크롤링 실제 동작)
+```
+cron
+  ↓
+scheduled_crawl.py   ← ②
+  ↓
+target_selector.py   ← ①
+  ↓
+crawl_service.py
+  ↓
+collector (사이트별)
+  ↓
+save_service.py      ← ③
+  ↓
+repository.py
+  ↓
+DB 저장
+  ↓
+CrawlJobLog 기록     ← ④
+```
+
+| 역할       | 파일                                                 |
+| -------- | -------------------------------------------------- |
+| ① 대상 관리  | `models.py (CrawlTarget)`, `target_selector.py`    |
+| ② 스케줄 실행 | `scheduled_crawl.py`                               |
+| ③ 저장/갱신  | `save_service.py`, `repository.py`, `CrawlRawData` |
+| ④ 로그     | `CrawlJobLog`, `scheduled_crawl.py`                |
+
+즉 정리하면 자동 크롤링을 만들려면 크롤링보다 4가지 구조가 더 중요합니다.
+- 대상 관리 없으면 → 자동화 불가능
+- 스케줄러 없으면 → 수동 작업
+- 저장 로직 없으면 → 데이터 쓰레기됨
+- 로그 없으면 → 장애 대응 불가능
+
+---
 ### 1단계: 수동 크롤링 사이트 확보 및 환경설정
 - 공개 데이터셋으로 모델 파이프라인 먼저 완성
 - 공식 API로 상품 후보 수집
 - 허용 범위가 분명한 소스만 제한적으로 수집
 
-크로링 사이트
+크롤링 사이트
 [다나와](https://search.danawa.com/dsearch.php?addDelivery=N&boost=true&checkedInfo=N&coupangMemberSort=N&defaultPhysicsCategoryCode=9875%7C36916%7C36932%7C0&defaultUICategoryCode=18255394&defaultVaTab=116291&defaultVmTab=7188&isZeroPrice=Y&limit=40&list=list&originalQuery=%EC%88%98%EB%B6%84%ED%81%AC%EB%A6%BC&page=1&priceUnitSort=Y&priceUnitSortOrder=A&query=%EC%88%98%EB%B6%84%ED%81%AC%EB%A6%BC&quickProductYN=N&recommendedSort=N&simpleDescOpen=Y&sort=saveDESC&tab=main&volumeType=va)
 [화해화장품](https://www.hwahae.co.kr/search?q=%EC%88%98%EB%B6%84%ED%81%AC%EB%A6%BC&type=goods)
 [글로우픽](https://glowpick.co.kr/ranking/search/%EC%88%98%EB%B6%84%ED%81%AC%EB%A6%BC)
 
-크로링 전용 앱생성
+크롤링 전용 앱생성
 ```bash
 python manage.py startapp crawling apps/crawling
 ```
@@ -44,7 +194,7 @@ backend/
         ├── migrations/
         ├── admin.py
         ├── apps.py
-        ├── models.py
+        ├── models.py   # ① 대상 관리
         ├── tests.py
         └── views.py
 ```
@@ -73,14 +223,14 @@ touch apps/crawling/services/crawl_service.py
 touch apps/crawling/management/commands/test_crawl.py
 ```
 
-최종 구조
+최종 구조 : ③ 수집 + 저장 흐름 (초기 버전)
 ```
 apps/crawling/
 ├── migrations/
 ├── management/
 │   └── commands/
 │       └── test_crawl.py
-├── collectors/          ← 사이트별 크롤러 (3단계 핵심)
+├── collectors/          ← 실제 크롤링
 │   └── __init__.py
 ├── services/
 │   ├── __init__.py
@@ -93,8 +243,10 @@ apps/crawling/
 ├── models.py
 └── tests.py
 ```
+데이터를 어떻게 가져오고 처리할지 만드는 단계
 
-웹크로링에 필요한 라이브러리 설치
+
+웹크롤링에 필요한 라이브러리 설치
 ```bash
 uv pip install beautifulsoup4 lxml requests
 ```
@@ -105,9 +257,21 @@ uv pip freeze > requirements.txt
 ```
 ---
 ### 2단계: DB 테이블 구조 만들기
-A. 크롤링 대상 링크 테이블
-B. 수집 데이터 테이블
-C. 실행 로그 테이블
+
+`apps/crawling/models.py`
+
+- `CrawlTarget`
+    - 크롤링할 URL 목록을 저장하는 역할
+    - 어떤 사이트를 돌릴지, search인지 product인지, active 상태인지 관리
+- 즉, 자동 크롤링의 대상 관리에 해당합니다.
+
+- `CrawlRawData`
+    - 수집한 원본 데이터 저장
+- 즉, 저장 대상 테이블 역할입니다.
+
+- `CrawlJobLog`
+    - 성공/실패, 처리 건수, 시작/종료 시간, 메시지 저장
+- 즉, 실행 로그 저장소입니다.
 
 `apps/crawling/models.py`
 ```python
@@ -301,6 +465,14 @@ class CrawlJobLog(models.Model):
     def __str__(self):
         return f"{self.site} | {self.status} | {self.started_at}"
 ```
+---
+`apps/crawling/admin.py`
+
+- 대상 목록(`CrawlTarget`)
+- 수집 데이터(`CrawlRawData`)
+- 실행 로그(`CrawlJobLog`)  
+    를 관리자 화면에서 확인하게 해주는 파일
+- 즉, 운영/확인용 화면 연결 역할입니다
 
 `apps/crawling/admin.py`
 ```python
@@ -356,6 +528,11 @@ class CrawlJobLogAdmin(admin.ModelAdmin):
     search_fields = ("site", "message")
     ordering = ("-started_at",)
 ```
+---
+`apps/crawling/apps.py`
+
+- Django에 `apps.crawling` 앱을 등록하는 설정 파일
+- 즉, 앱 기본 설정 역할입니다.
 
 `apps/crawling/apps.py`
 ```python
@@ -365,7 +542,6 @@ class CrawlingConfig(AppConfig):
     default_auto_field = "django.db.models.BigAutoField"
     name = "apps.crawling"
 ```
-
 
 마이그레이션
 ```bash
@@ -416,6 +592,13 @@ print("등록 완료")
 ```
 정상적으로 나오면 `exit()` 로 빠져나옵니다.
 
+---
+③ 가져온 데이터를 저장하거나 갱신하는 로직
+
+`apps/crawling/services/http.py`
+
+- 웹페이지에 요청을 보내서 HTML을 가져오는 역할
+- 즉, 저장 전 단계인 **수집 입력부**입니다.
 
 HTTP 요청 서비스 작성
 `apps/crawling/services/http.py`
@@ -442,10 +625,17 @@ def fetch_page(url: str, timeout: int = 15) -> requests.Response:
     response.raise_for_status()
     return response
 ```
-
+---
 파서 작성
+`apps/crawling/services/parser.py`
+
+- 가져온 HTML을 분석해서
+    - 페이지 정보 추출
+    - 상품 상세 링크 후보 추출
+- 즉, 수집 데이터 가공/추출 역할입니다.
+
 지금은 1차 테스트이기 때문에  
-“상품 상세 링크 후보를 찾는 것”까지만 구현합니다.
+상품 상세 링크 후보를 찾는 것까지만 구현합니다.
 `apps/crawling/services/parser.py`
 ```python
 from bs4 import BeautifulSoup
@@ -519,6 +709,11 @@ def extract_candidate_links(site: str, base_url: str, html: str) -> list[dict]:
 
     return unique_items
 ```
+---
+`apps/crawling/services/crawl_service.py`
+
+- 요청 → 파싱 → DB 저장 → 마지막 실행시간 갱신까지 연결
+- 즉, 전체 크롤링 실행 흐름 + 저장 처리의 중심 역할입니다.
 
 크롤링 서비스 작성
 `apps/crawling/services/crawl_service.py`
@@ -585,6 +780,12 @@ def crawl_search_target(target):
         "candidate_count": len(candidate_links),
     }
 ```
+---
+`apps/crawling/management/commands/test_crawl.py`
+
+- 실행하면서 성공/실패를 세고
+- 마지막에 `CrawlJobLog`에 결과 저장
+- 즉, 로그를 실제로 남기는 실행 파일입니다.
 
 management command 작성
 `apps/crawling/management/commands/test_crawl.py`
@@ -838,6 +1039,7 @@ apps/crawling/
 
 추가 생성할 파일
 ```bash
+mkdir -p apps/crawling/collectors
 touch apps/crawling/collectors/danawa_collector.py
 touch apps/crawling/collectors/hwahae_collector.py
 touch apps/crawling/collectors/glowpick_collector.py
@@ -1347,7 +1549,7 @@ apps/crawling/
 └── tests.py                 # [4단계 추가] 중복 저장 방지 테스트
 ```
 
-파일 생성
+### 파일 생성 여기까지 테스트
 ```bash
 touch apps/crawling/services/repository.py
 ```
@@ -3102,7 +3304,7 @@ touch /home/youjung/product-review-service/logs/scheduled_crawl.log
 |item_url|상품 링크|
 |record_type|후보 링크|
 
-AI 분석에 필요한 데이터 추가 크로링
+AI 분석에 필요한 데이터 추가 크롤링
 
 |review|rating|
 |---|---|
@@ -3649,7 +3851,7 @@ for r in reviews:
 >>> 
 ```
 ---
-### 리뷰 크로링을 위한 마지막 테스트
+### 리뷰 크롤링을 위한 마지막 테스트
 `apps/crawling/collectors/hwahae_review_collector.py`
 ```python
 import re
@@ -3872,7 +4074,7 @@ for r in reviews:
 
 
 ----
-### 리뷰 크로링을 위한 마지막 단계
+### 리뷰 크롤링을 위한 마지막 단계
 
 최종 디렉토리 구조
 ```
@@ -4996,3 +5198,383 @@ DB 저장
   ↓
 admin에서 확인
 ```
+
+---
+이후 18번 Celery Redis기반으로 변경한 이후 가상환경 기반을 19번 Docker 기반으로 변경할때
+```
+docker compose exec web python manage.py check  
+docker compose exec web python manage.py shell  
+docker compose exec web python manage.py migrate  
+docker compose exec web python manage.py test_crawl  
+docker compose exec web python manage.py test_crawl --limit 3 --review-limit 10 
+```
+
+---
+### `1.` 새로운 크롤링 사이트 추가하기
+- 보통 collector 파일 추가 + 선택 분기 수정 + 모델 choices 수정
+
+### `2.` 기존 크롤링 사이트 중단하기
+- 보통 비활성화만 할지, 코드까지 제거할지를 먼저 결정한 뒤 처리
+
+---
+`1.` 새 사이트를 추가할 때
+예를 들어 새로 oliveyoung 사이트를 추가한다고 해보겠습니다.
+
+먼저 이해해야 할 원칙 : 현재 구조는 이런 식입니다.
+```
+test_crawl.py  
+  ↓  
+crawl_service.py  
+  ↓  
+site 값에 따라 collector 선택  
+  ↓  
+각 collector가 해당 사이트만 크롤링
+```
+
+즉, 새 사이트를 추가한다는 말은 새 사이트 전용 collector를 하나 더 만든다 이게 핵심입니다.
+
+---
+추가해야 하는 파일
+
+1️⃣ `apps/crawling/collectors/oliveyoung_collector.py` 추가
+
+이 파일이 가장 중요합니다.
+
+역할:
+- oliveyoung 사이트에 요청
+- HTML 파싱
+- 상품 링크 또는 리뷰 데이터 추출
+
+즉, 사이트별 전용 크롤러를 하나 새로 만드는 것입니다.  
+기존의 `danawa_collector.py`, `hwahae_collector.py`, `glowpick_collector.py`와 같은 위치에 들어갑니다.
+
+예시 개념:
+`apps/crawling/collectors/oliveyoung_collector.py`  
+```python
+from urllib.parse import urljoin  
+from apps.crawling.services.http import fetch_page  
+from apps.crawling.services.parser import extract_page_info, get_soup  
+  
+def collect_oliveyoung_search(target):  
+    response = fetch_page(target.url)  
+    html = response.text  
+    soup = get_soup(html)  
+  
+    candidates = []  
+  
+    for a in soup.select("a[href]"):  
+        href = (a.get("href") or "").strip()  
+        if not href:  
+            continue  
+  
+        full_url = urljoin(target.url, href)  
+  
+        if "oliveyoung.co.kr" in full_url and "/goods/" in full_url:  
+            candidates.append({  
+                "title": a.get_text(" ", strip=True)[:255],  
+                "url": full_url,  
+            })  
+  
+    return {  
+        "site": "oliveyoung",  
+        "page_info": extract_page_info(html),  
+        "candidate_links": candidates[:20],  
+        "html": html,  
+    }
+```
+이 코드는 예시이고, 핵심은 새 사이트만의 링크 규칙을 이 파일 안에 넣는 것입니다.
+
+---
+수정해야 하는 파일
+
+2️⃣ `apps/crawling/services/crawl_service.py` 수정
+이 파일은 site 값에 따라 어떤 collector를 부를지 결정하는 곳입니다.
+
+기존 개념:
+```python
+if target.site == "danawa":  
+    ...  
+elif target.site == "hwahae":  
+    ...  
+elif target.site == "glowpick":  
+    ...
+```
+
+새 사이트 추가 시:
+```python
+from apps.crawling.collectors.oliveyoung_collector import collect_oliveyoung_search  
+  
+if target.site == "danawa":  
+    result = collect_danawa_search(target)  
+elif target.site == "hwahae":  
+    result = collect_hwahae_search(target)  
+elif target.site == "glowpick":  
+    result = collect_glowpick_search(target)  
+elif target.site == "oliveyoung":  
+    result = collect_oliveyoung_search(target)  
+else:  
+    raise ValueError(...)
+```
+
+즉, 새 collector를 연결해주는 작업입니다.
+
+---
+3️⃣ `apps/crawling/models.py` 수정
+
+`CrawlTarget` 안에 `SITE_CHOICES`가 있으면 여기에 새 사이트를 추가해야 합니다.
+
+예시:
+```
+SITE_CHOICES = [  
+    ("danawa", "다나와"),  
+    ("hwahae", "화해"),  
+    ("glowpick", "글로우픽"),  
+    ("oliveyoung", "올리브영"),   # 추가  
+]
+```
+
+이걸 안 넣으면:
+
+- admin에서 선택 불편
+- 데이터 등록 시 일관성 깨짐
+- site 값 관리가 어려움
+
+---
+4️⃣ `apps/crawling/admin.py`는 보통 수정 안 해도 됨
+이미 `CrawlTarget`, `CrawlRawData`, `CrawlJobLog`를 보여주고 있으면 새 사이트가 추가돼도 admin 구조 자체는 그대로 쓸 수 있습니다.
+
+다만 필요하면:
+- list_filter
+- search_fields
+- 표시 컬럼
+
+정도는 보완할 수 있습니다.
+
+---
+5️⃣ 대상 URL 등록
+코드 파일은 아니지만, 실제로는 이것도 꼭 해야 합니다.
+
+즉:
+- Django shell
+- admin
+- fixture  
+    중 하나로 새 사이트 URL을 `CrawlTarget`에 넣어야 실제 실행됩니다.
+
+예시 개념:
+```python
+CrawlTarget.objects.create(  
+    site="oliveyoung",  
+    target_type="search",  
+    keyword="수분크림",  
+    title="올리브영 수분크림 검색",  
+    url="https://www.oliveyoung.co.kr/store/search/getSearchMain.do?query=%EC%88%98%EB%B6%84%ED%81%AC%EB%A6%BC",  
+)
+```
+
+---
+경우에 따라 추가 수정되는 파일
+
+6️⃣ `tests.py`
+새 사이트가 들어오면 최소한 테스트도 하나 추가하는 게 좋습니다.
+
+예:
+- oliveyoung 결과 저장 테스트
+- 중복 저장 방지 테스트
+- collector 반환 구조 테스트
+
+---
+### 새 사이트 추가 순서 정리
+
+실무적으로는 이 순서가 편합니다.
+
+순서
+1. 새 사이트 URL 구조 확인
+2. `collectors/새사이트_collector.py` 추가
+3. `crawl_service.py`에 분기 추가
+4. `models.py`의 `SITE_CHOICES` 수정
+5. admin 또는 shell에서 `CrawlTarget` 등록
+6. `python manage.py test_crawl` 실행
+7. DB 저장 결과와 로그 확인
+8. 필요하면 테스트 코드 추가
+
+---
+`2.` 기존 사이트 크롤링을 중단할 때
+
+중단은 두 방식이 있습니다.
+
+방식 A. 운영만 중단
+가장 안전한 방법입니다.
+
+즉, 코드는 남겨두고 대상만 비활성화합니다.
+
+수정할 것
+`CrawlTarget.is_active = False`
+
+예시:
+```python
+target = CrawlTarget.objects.get(site="glowpick")  
+target.is_active = False  
+target.save()
+```
+
+이렇게 하면 `test_crawl.py`나 `scheduled_crawl.py`에서  
+보통 `is_active=True` 대상만 조회하므로 실행 대상에서 빠집니다.
+
+장점
+- 나중에 다시 켜기 쉬움
+- 코드 손상 없음
+- 운영 안정적
+
+이 경우 삭제 안 해도 되는 파일
+- `glowpick_collector.py`
+- `crawl_service.py`의 glowpick 분기
+- `SITE_CHOICES`
+
+다 그대로 둬도 됩니다.
+
+---
+방식 B. 코드까지 완전히 제거
+정말 다시 안 쓸 사이트일 때만 합니다.
+
+이 경우는 삭제 전에 먼저 비활성화하고, 데이터 영향 확인 후 제거하는 게 좋습니다.
+
+---
+중단 시 수정/삭제 순서
+
+1️⃣ 먼저 대상 비활성화
+
+가장 먼저 해야 합니다.
+이유:
+- 코드 삭제 전에 운영 중단
+- 실수로 스케줄러가 돌지 않게 방지
+
+---
+2️⃣ `crawl_service.py`에서 분기 제거
+
+예를 들어 glowpick를 제거한다면:
+
+삭제 대상 개념:
+```python
+elif target.site == "glowpick":  
+    result = collect_glowpick_search(target)
+```
+
+그리고 import도 제거:
+```python
+from apps.crawling.collectors.glowpick_collector import collect_glowpick_search
+```
+
+---
+3️⃣ `collectors/glowpick_collector.py` 삭제
+
+이제 더 이상 호출되지 않으면 파일을 삭제할 수 있습니다.
+
+---
+4️⃣ `models.py`의 `SITE_CHOICES`에서 제거
+
+예시:
+```python
+SITE_CHOICES = [  
+    ("danawa", "다나와"),  
+    ("hwahae", "화해"),  
+    # ("glowpick", "글로우픽"), 제거  
+]
+```
+주의:  
+이미 DB에 `site="glowpick"` 데이터가 남아 있으면 바로 제거하기 전에 데이터 정리가 필요할 수 있습니다.
+
+---
+5️⃣ 기존 DB 데이터 처리 결정
+
+여기서 선택해야 합니다.
+
+ 선택지 1: 과거 데이터는 보존
+- `CrawlRawData`
+- `CrawlJobLog`
+- `CrawlTarget`  
+    를 남겨둠
+
+이 경우:
+- 운영 기록은 보존됨
+- 다만 choices 제거 시 기존 값 표시 문제를 점검해야 함
+
+선택지 2: 관련 데이터도 삭제
+
+예시 개념:
+- glowpick 대상 삭제
+- glowpick raw 데이터 삭제
+- glowpick 로그 삭제
+
+이건 조심해야 합니다.  
+보통 운영 기록은 남기는 편이 더 안전합니다.
+
+---
+6️⃣ 테스트 코드 수정
+
+`tests.py`에 glowpick 관련 테스트가 있으면 제거하거나 수정해야 합니다.
+
+---
+기존 사이트 중단 순서 요약
+
+안전한 운영 중단
+1. `CrawlTarget.is_active=False`
+2. 스케줄 실행에서 빠지는지 확인
+3. 필요 시 장기적으로 코드 유지
+
+완전 제거
+1. `is_active=False`
+2. `crawl_service.py` 분기 제거
+3. collector import 제거
+4. collector 파일 삭제
+5. `SITE_CHOICES` 수정
+6. 관련 테스트 수정
+7. 필요 시 DB 데이터 정리
+
+---
+`3.` 실무에서 추천하는 방식
+
+실무에서는 보통 바로 삭제하지 않고 이렇게 갑니다.
+
+1단계
+운영 중단만 먼저
+```
+is_active=False
+```
+
+2단계
+몇 주간 문제 없는지 확인
+
+3단계
+정말 필요 없으면 코드 제거
+
+이유:
+- 갑자기 다시 살릴 수 있음
+- 장애 원인 추적 가능
+- 과거 로그 확인 가능
+
+---
+최종 정리
+
+새 사이트 추가 시 추가 파일
+- `apps/crawling/collectors/새사이트_collector.py`
+
+수정 파일
+- `apps/crawling/services/crawl_service.py`
+- `apps/crawling/models.py`
+- 필요 시 `tests.py`
+
+운영 작업
+- `CrawlTarget` 데이터 등록
+
+---
+기존 사이트 중단 시
+
+가장 먼저
+- `CrawlTarget.is_active=False`
+
+완전 제거 시 수정/삭제
+- `apps/crawling/services/crawl_service.py` 수정
+- `apps/crawling/collectors/기존사이트_collector.py` 삭제
+- `apps/crawling/models.py` 수정
+- 필요 시 `tests.py` 수정
+- 필요 시 DB 데이터 정리

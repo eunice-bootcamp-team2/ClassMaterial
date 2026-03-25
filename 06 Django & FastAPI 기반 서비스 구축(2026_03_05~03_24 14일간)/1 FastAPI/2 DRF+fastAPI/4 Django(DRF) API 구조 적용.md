@@ -1,4 +1,7 @@
 1️⃣ accounts views.py : (User 조회 ViewSet)
+- 사용자 조회용 API를 담당합니다.
+- 전체 사용자 목록 조회, 특정 사용자 상세 조회 같은 기능이 들어갑니다.
+- 즉, “유저 데이터를 밖으로 보여주는 창구” 역할입니다
 
 `backend/apps/accounts/views.py`
 ```python
@@ -71,6 +74,10 @@ class UserViewSet(ViewSet):
 ```
 DB → Serializer → Response
 ```
+---
+- User 모델 데이터를 JSON으로 바꿔줍니다.
+- 보통 id, username, email 같은 값을 응답 형식으로 정리합니다.
+- 즉, User 데이터를 API 응답용 형태로 포장하는 역할입니다.
 
 1️⃣ accounts serializer : (User Read Serializer User 데이터 직렬화 - 조회용)
 
@@ -95,6 +102,13 @@ class UserSerializer(serializers.ModelSerializer):
         ]
 ```
 ---
+상품 CRUD API입니다.
+- 상품 목록 조회
+- 상품 상세 조회
+- 상품 생성
+- 상품 수정
+- 상품 삭제
+
 2️⃣ products views.py (Product CRUD API ViewSet)
 
 `backend/apps/products/views.py`
@@ -274,6 +288,11 @@ class ProductViewSet(ViewSet):
 ```
 요청 → ViewSet → ORM → Serializer → Response
 ```
+---
+- 상품 입력값 검증
+- 상품 데이터를 JSON으로 변환
+
+예를 들어 상품명, 설명, 가격, 이미지 같은 값이 올바른지 확인하고, 응답할 때도 JSON 형식으로 정리해줍니다.
 
 2️⃣ products serializer (Product CRUD Serializer Product 데이터 검증 및 직렬화)
 `backend/apps/products/serializers.py`
@@ -299,6 +318,16 @@ class ProductSerializer(serializers.ModelSerializer):
         ]
 ```
 ---
+리뷰 CRUD API + 리뷰 관련 관계 데이터 응답
+- 리뷰 목록 조회
+- 리뷰 상세 조회
+- 리뷰 생성
+- 리뷰 수정
+- 리뷰 삭제
+
+즉, 사용자가 상품에 남기는 핵심 데이터인 리뷰를 직접 다루는 API 파일입니다.  
+상품 앱이 상품을 다룬다면, 이 파일은 상품에 달린 리뷰를 다룹니다.
+
 3️⃣ reviews views.py (Review CRUD API ViewSet)
 
 `backend/apps/reviews/views.py`
@@ -451,6 +480,21 @@ class ReviewViewSet(ViewSet):
 ```
 요청 → ViewSet → ORM → Serializer → Response
 ```
+---
+이 파일은 조금 더 중요합니다. 이유는 단순 리뷰 정보만 다루는 게 아니라:
+- 리뷰 본문
+- 리뷰 평점
+- 리뷰 이미지
+- AI 분석 결과
+까지 함께 묶어서 응답할 수 있게 설계되어 있기 때문입니다.
+
+serializer는 3가지 역할이 있습니다.
+1. 리뷰 생성/수정 시 입력값 검증
+2. 리뷰 데이터를 JSON으로 변환
+3. 리뷰 이미지, AI 결과 같은 관계 데이터까지 함께 묶어서 출력
+
+즉, 이 코드는 리뷰 응답을 풍부하게 만드는 중심 파일입니다.  
+리뷰 단독 정보만이 아니라, 리뷰에 연결된 하위 데이터까지 포함하는 구조를 이해하는 데 중요합니다.
 
 3️⃣ reviews serializer (Review CRUD + 관계 데이터 Serializer)
 ```
@@ -553,6 +597,21 @@ class ReviewSerializer(serializers.ModelSerializer):
         ]
 ```
 ---
+리뷰에 대한 사용자 행동 API
+이 앱은 리뷰 자체가 아니라, 리뷰에 대해 사용자가 하는 행동을 처리합니다.
+- 좋아요
+- 북마크
+- 댓글
+- 신고
+
+기능별로 ViewSet을 나누어 설명하면
+- `ReviewLikeViewSet` → 좋아요 조회/생성
+- `ReviewBookmarkViewSet` → 북마크 조회/생성
+- `ReviewCommentViewSet` → 댓글 조회/생성
+- `ReviewReportViewSet` → 신고 조회/생성
+
+즉, 이 코드는 사용자가 리뷰에 대해 누르는 모든 부가 행동을 처리하는 API 모음입니다.
+
 4️⃣ interactions views.py (리뷰 상호작용 API ViewSet) 
 	(Review Like / Bookmark / Comment / Report API)
 ```
@@ -811,18 +870,17 @@ class ReviewReportViewSet(ViewSet):
         return Response(serializer.errors)
 ```
 
-이 코드가 하는 일 요약
-이 파일은 리뷰와 관련된 사용자 상호작용 기능 API를 모아둔 파일입니다.
-즉, 사용자가 리뷰에 대해 할 수 있는 행동 4가지를 각각 분리해서 처리합니다.
-- `ReviewLikeViewSet` → 좋아요 조회 / 생성
-- `ReviewBookmarkViewSet` → 북마크 조회 / 생성
-- `ReviewCommentViewSet` → 댓글 조회 / 생성
-- `ReviewReportViewSet` → 신고 조회 / 생성
-
 위의 코드 처리 흐름
 ```
 요청 → ViewSet → Serializer 검증 → DB 저장/조회 → Response 반환
 ```
+---
+이 코드는 상호작용 데이터를 검증하고 JSON으로 변환합니다.
+- 좋아요는 user + review 관계가 맞는지
+- 댓글은 user + review + content가 들어왔는지
+- 신고는 reason이 있는지 같은 부분을 확인합니다.
+
+즉, 좋아요/북마크/댓글/신고 데이터가 정상인지 체크하는 역할입니다.
 
 4️⃣ interactions serializer (Review 상호작용 CRUD Serializer)
 ```
@@ -947,6 +1005,17 @@ class ReviewReportSerializer(serializers.ModelSerializer):
 |신고|user + review + reason|
 
 ---
+AI 서버와 연결되는 분석용 API
+
+이 앱은 일반 CRUD 앱과 성격이 다릅니다.  
+상품/리뷰처럼 DB 데이터를 직접 CRUD하는 용도가 아니라, AI 기능을 호출하기 위한 진입점 역할을 합니다.
+
+- 감정분석 요청을 받는 API
+- 사용자가 텍스트를 보내면 AI 분석 요청을 처리
+
+즉, 앱은 백엔드에서 AI 기능을 호출하기 위한 입구입니다.  
+일반 데이터 CRUD가 아니라 기능 실행형 API라고 이해하시면 됩니다.
+
 5️⃣ ai_gateway views (AI 모델 적용후 사용예정)
 
 이 앱은 CRUD가 아니므로 APIView 유지
@@ -965,6 +1034,17 @@ class SentimentAnalysisAPIView(APIView):
             "text": text
         })
 ```
+---
+- AI 요청값 검증
+- AI 응답 형식 정의
+
+예를 들면:
+- 입력: text
+- 출력: sentiment, confidence, keywords
+
+이런 형식을 맞춰주는 역할입니다.
+
+즉, 이 파일은 AI API의 요청/응답 계약서 같은 역할입니다.
 
 5️⃣ ai_gateway serializer
 `backend/apps/ai_gateway/serializers.py`
@@ -984,6 +1064,25 @@ class SentimentResponseSerializer(serializers.Serializer):
         required=False
     )
 ```
+---
+이 구조를 한 줄씩 보면 헷갈리는데, 실제로는 두 덩어리입니다
+
+(1) 일반 서비스 API
+- accounts
+- products
+- reviews
+- interactions
+
+이쪽은 대부분 CRUD 중심입니다. 즉, DB에 저장된 데이터를 만들고, 읽고, 수정하고, 삭제하는 역할입니다.
+
+(2) 기능 실행 API
+- ai_gateway
+
+이쪽은 CRUD보다 AI 기능을 호출하고 결과를 받는 역할이 중심입니다.
+
+그래서 `ai_gateway`는 ViewSet보다 APIView가 더 자연스럽습니다.  
+이 앱은 CRUD가 아니므로 APIView 유지라고 이해하면 됩니다.
+
 ---
 ### modes, views, serializer가 있으면 API를 테스트 할수 있는 조건이 완성
 
