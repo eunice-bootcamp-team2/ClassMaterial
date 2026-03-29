@@ -42,7 +42,6 @@ Fast API 임시 디렉토리 구조
 │   ├── api/
 │   │   └──  recommend.py
 │   ├── models/
-│   │   ├── recommend_model.py
 │   │   └── embedding_model.py
 │   ├── schemas/
 │   │   └── recommend_schema.py
@@ -54,6 +53,24 @@ Fast API 임시 디렉토리 구조
 ```bash
 uv pip install fastapi uvicorn sentence-transformers torch
 ```
+---
+`requirements.txt 개념정리`  
+  
+로컬 개발환경에서는 직접 라이브러리를 설치하면서 개발하지만,  
+다른 서버나 개발자는 어떤 라이브러리가 필요한지 알 수 없습니다.  
+  
+그래서 requirements.txt는  
+이 프로젝트에 필요한 라이브러리 목록을 기록해두는 파일이며,  
+  
+협업이나 배포 시 이 파일을 기준으로  
+CI/CD나 Docker 환경에서 `pip install -r requirements.txt`를 실행하여  
+동일한 환경을 자동으로 구성하기 위해 사용됩니다.
+
+Docker / CI/CD 환경에서는  
+`requirements.txt`를 기준으로 라이브러리를 설치하며,  
+  
+일반적으로는 pip install -r requirements.txt를 사용하지만,  
+uv를 사용하는 경우 uv pip install -r requirements.txt로 설치할 수도 있습니다.
 
 `requirements.txt` 갱신
 ```
@@ -75,7 +92,6 @@ services/__init__.py
 
 touch main.py \
       test_embedding.py \
-      models/recommend_model.py \
       models/embedding_model.py \
       schemas/recommend_schema.py \
       services/recommend_service.py
@@ -214,14 +230,15 @@ config.json: 100%|████████████████████�
 모델이 아예 이상하게 동작하는 건 아니고, 어느 정도 의미 구분을 하고 있다고 볼 수 있습니다.
 
 ---
-요청/응답 스키마 만들기
+### 요청/응답 스키마 만들기
+
 이제 API가 받을 데이터 형식을 정해야 합니다.
-`ai-server/schemas/recommend_schema.py`
+`ai-server/schemas/recommend_schema.py` : 클라이언트(DRF/Django)에서 FastAPI로 들어오는 데이터 형식이 올바른지 검사하는 파일입니다.
 ```python
 from pydantic import BaseModel
 from typing import List
 
-
+# Django → FastAPI 요청 데이터
 class EmbeddingRequest(BaseModel):
     texts: List[str]
 
@@ -238,23 +255,21 @@ class SimilarityRequest(BaseModel):
 class SimilarityResponse(BaseModel):
     similarity: float
 ```
-
-스키마를 별도의 파일로 만들면
-- 요청 body 검증
-- Swagger 문서 자동 생성
-- 응답 구조 고정
-- 나중에 DRF에서 호출할 때도 형식이 명확해짐
-예를 들어 `/similarity`에 잘못된 JSON이 오면 FastAPI가 자동으로 422 검증 에러를 내줍니다.
+`BaseModel`은 Pydantic 라이브러리에서 제공하는 클래스입니다
+- 요청 데이터 자동 검증
+- JSON → Python 객체 자동 변환
+- 응답 구조 자동 생성
+위의 파일은 이런 일들을 수행합니다.
 
 ---
 서비스 로직 만들기
-이제 실제 추론 로직을 작성합니다.
+AI 모델을 이용해서 실제로 임베딩 생성과 유사도 계산을 수행하는 핵심 처리 로직 파일입니다.
 `ai-server/services/recommend_service.py`
 ```python
 from sklearn.metrics.pairwise import cosine_similarity
 from models.embedding_model import embedding_model
 
-
+# 임베딩 생성
 def make_embeddings(texts: list[str]) -> list[list[float]]:
     """
     여러 문장을 받아 임베딩 벡터 리스트로 반환
@@ -262,7 +277,7 @@ def make_embeddings(texts: list[str]) -> list[list[float]]:
     vectors = embedding_model.encode(texts)
     return [vector.tolist() for vector in vectors]
 
-
+# 유사도 계산
 def calculate_similarity(text1: str, text2: str) -> float:
     """
     두 문장의 cosine similarity 계산
@@ -271,6 +286,12 @@ def calculate_similarity(text1: str, text2: str) -> float:
     score = cosine_similarity([vectors[0]], [vectors[1]])[0][0]
     return float(score)
 ```
+- 두 문장을 받아
+- 각각 임베딩 생성
+- cosine similarity 계산
+- 0 ~ 1 사이 점수 반환
+두 문장이 얼마나 비슷한지 계산합니다.
+
 왜 서비스 레이어를 두는가
 - `api/` : 요청 받기
 - `schemas/` : 입력/출력 형식
@@ -281,8 +302,29 @@ def calculate_similarity(text1: str, text2: str) -> float:
 `리뷰 추천`, `비슷한 리뷰 검색`, `상품 유사도 계산` 기능을 추가할 때도 편합니다.
 
 ---
-FastAPI 라우터 만들기
-이제 엔드포인트를 만듭니다.
+### FastAPI 라우터 만들기
+외부(Django 등)에서 들어오는 요청을 받아서, 서비스 로직을 실행하고 결과를 반환하는 FastAPI의 입구(엔드포인트) 역할을 하는 파일입니다.
+
+즉, 이 코드인 FastAPI 라우터는 DRF의 요청을 받아 서비스 로직을 실행시키고, 그 결과를 다시 DRF에게 JSON으로 반환하는 역할입니다
+```
+DRF (Django)
+   ↓ 요청 (HTTP)
+FastAPI (api/recommend.py ← 여기 코드)
+   ↓
+services/recommend_service.py (실제 계산)
+   ↓
+FastAPI (결과 받음)
+   ↓
+DRF로 응답 반환
+```
+
+API 엔드포인트 정의
+```bash
+POST /api/v1/recommend/embed  
+POST /api/v1/recommend/similarity
+```
+외부에서 호출할 수 있는 URL을 생성합니다.
+
 `ai-server/api/recommend.py`
 ```python
 from fastapi import APIRouter
@@ -307,24 +349,22 @@ def similarity(payload: SimilarityRequest):
     return {"similarity": calculate_similarity(payload.text1, payload.text2)}
 ```
 
-여기서 열리는 API
-```bash
-POST /api/v1/recommend/embed  
-POST /api/v1/recommend/similarity
-```
-
 ---
 main.py 연결
+이 코드는 FastAPI 애플리케이션을 생성하고, 정의된 라우터를 등록하여 API가 실제로 동작하도록 연결하는 진입점 역할을 합니다.
+
 `ai-server/main.py`
 ```python
 from fastapi import FastAPI
 from api.recommend import router as recommend_router
 
+# FastAPI 앱 생성
 app = FastAPI(title="AI Recommendation Server")
 
+# 라우터 연결
 app.include_router(recommend_router)
 
-
+# 기본 테스트 API
 @app.get("/")
 def root():
     return {"message": "AI server is running"}

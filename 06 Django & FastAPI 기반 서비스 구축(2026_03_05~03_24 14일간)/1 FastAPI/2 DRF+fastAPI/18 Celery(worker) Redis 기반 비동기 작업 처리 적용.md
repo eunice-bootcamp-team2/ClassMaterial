@@ -44,7 +44,6 @@ FastAPI 안에 Celery를 또 두면 가능은 하지만, 현재 단계에서는 
 문서에서도 Redis + Celery를 붙일 대상이 오래 걸리는 AI 작업, 대량 리뷰 분석, 배치 임베딩 생성, 주기적 분석 작업이라고 되어 있는데, 이런 작업은 대부분 DRF가 스케줄을 잡고 FastAPI를 호출하는 쪽이 운영하기 편합니다.
 
 ### 그렇다면 FastAPI에 Celery를 두는 경우는 언제인가?
-
 FastAPI에도 Celery를 붙일 수는 있습니다. 다만 그건 보통 이런 경우입니다.
 - FastAPI가 단순 추론 서버가 아니라 독립 AI 플랫폼일 때
 - FastAPI가 자체 DB를 갖고 작업 상태까지 직접 관리할 때
@@ -67,22 +66,22 @@ touch mysite/celery.py
 import os
 from celery import Celery
 
-# [추가] Django settings 모듈 지정
+# Django settings 모듈 지정
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "mysite.settings")
 
-# [추가] Celery 앱 생성
+# Celery 앱 생성
 app = Celery("mysite")
 
-# [추가] Django settings.py의 CELERY_ 접두사 설정값 자동 로드
+# Django settings.py의 CELERY_ 접두사 설정값 자동 로드
 app.config_from_object("django.conf:settings", namespace="CELERY")
 
-# [추가] INSTALLED_APPS 안의 tasks.py 자동 탐색
+# INSTALLED_APPS 안의 tasks.py 자동 탐색
 app.autodiscover_tasks()
 ```
 
-`backend/mysite/__init__.py` : `[수정]`
+`backend/mysite/__init__.py` : `[추가]`
 ```python
-# [수정] Celery 앱을 Django 시작 시 함께 로드
+# [추가] Celery 앱을 Django 시작 시 함께 로드
 
 from .celery import app as celery_app
 
@@ -135,7 +134,83 @@ CELERY_TASK_SOFT_TIME_LIMIT = 60 * 8
 CELERY_TASK_ALWAYS_EAGER = os.getenv("CELERY_TASK_ALWAYS_EAGER", "False") == "True"
 CELERY_TASK_EAGER_PROPAGATES = True
 ```
+---
+기존의 모델은 AI 결과를 저장하는 것이였고 추가된 모델은 AI 작업 진행 상태를 저장을 추가함
+```
+ReviewSimilarityResult = 분석 결과 저장
+AIAnalysisTask = 분석 작업 상태 저장
+```
 
+`AIAnalysisTask`가 추가된 이유는:
+기존 흐름
+```
+버튼 클릭  
+→ 바로 FastAPI 호출  
+→ 결과 받음  
+→ 화면 출력
+```
+이 방식은 작업이 짧으면 괜찮습니다.  
+그런데 나중에는 리뷰가 많아지고, 비교 대상이 늘어나고, AI 계산이 무거워질 수 있습니다.
+
+그럼 이런 문제가 생깁니다.
+- 요청이 오래 걸림
+- 화면이 기다려야 함
+- 중간에 실패했는지 알기 어려움
+- 지금 몇 % 진행됐는지 알기 어려움
+
+그래서 셀러리를 붙이면 흐름이 이렇게 바뀝니다.
+```
+버튼 클릭  
+→ Django가 Celery 작업 등록  
+→ task_id 발급  
+→ Celery가 백그라운드에서 분석  
+→ 상태를 DB에 기록  
+→ 완료되면 결과 확인
+```
+
+왜 DB에 상태를 저장하는가?
+셀러리를 쓰면 작업은 백그라운드에서 돌아갑니다.  
+그런데 프론트나 관리자 입장에서는 이런 정보가 필요합니다.
+- 지금 대기중인가?
+- 이미 시작했는가?
+- 끝났는가?
+- 실패했는가?
+- 후보 리뷰가 몇 개였는가?
+- 최종 결과가 몇 개였는가?
+- 실패했다면 왜 실패했는가?
+
+이걸 메모리로만 두면 서버 재시작 시 확인이 어렵고,  
+관리자 페이지나 Django 쪽에서 조회하기도 불편합니다.
+
+그래서 작업 상태를 DB에도 남기는 것입니다.
+
+---
+각 모델 역할 차이
+
+`ReviewSimilarityResult`
+이건 최종 분석 결과 저장용입니다.
+
+예를 들면:
+- 리뷰 10번과 리뷰 23번 비교
+- 유사도 0.81
+- 라벨: 매우 비슷
+
+즉, 결과 데이터입니다.
+
+---
+`AIAnalysisTask`
+이건 작업 진행 상황 저장용입니다.
+
+예를 들면:
+- task_id = abc123
+- 상태 = STARTED
+- 비교 후보 수 = 18
+- 최종 결과 수 = 3
+- 실패 메시지 = 없음
+
+즉, 작업 로그/상태 데이터입니다.
+
+---
 `backend/apps/ai_gateway/models.py` : `[수정]`
 ```python
 from django.conf import settings
@@ -145,22 +220,26 @@ from django.db import models
 class ReviewSimilarityResult(models.Model):
     """
     [유지]
-    기존 문서에서 사용하던 AI 유사도 결과 저장 모델
+    AI 유사도 분석 결과 저장 모델 (최종 결과 데이터)
     """
 
     product = models.ForeignKey(...
+    # 어떤 상품 기준으로 분석했는지 연결
 
 
 class AIAnalysisTask(models.Model):
     """
     [추가]
-    Celery 비동기 작업 상태를 DB에서도 확인하기 위한 모델
+    Celery 비동기 작업 상태를 DB에서 추적하기 위한 모델
     """
 
-    STATUS_PENDING = "PENDING"
-    STATUS_STARTED = "STARTED"
-    STATUS_SUCCESS = "SUCCESS"
-    STATUS_FAILURE = "FAILURE"
+    # =========================
+    # [상태 값 정의]
+    # =========================
+    STATUS_PENDING = "PENDING"     # 작업 대기중
+    STATUS_STARTED = "STARTED"     # 작업 진행중
+    STATUS_SUCCESS = "SUCCESS"     # 작업 완료
+    STATUS_FAILURE = "FAILURE"     # 작업 실패
 
     STATUS_CHOICES = [
         (STATUS_PENDING, "대기중"),
@@ -169,11 +248,19 @@ class AIAnalysisTask(models.Model):
         (STATUS_FAILURE, "실패"),
     ]
 
+    # =========================
+    # [어떤 리뷰를 분석했는지]
+    # =========================
     source_review = models.ForeignKey(
         "reviews.Review",
         on_delete=models.CASCADE,
         related_name="ai_analysis_tasks",
     )
+    # 분석 기준이 되는 리뷰 (버튼 누른 리뷰)
+
+    # =========================
+    # [누가 요청했는지]
+    # =========================
     requested_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,
@@ -181,50 +268,141 @@ class AIAnalysisTask(models.Model):
         blank=True,
         related_name="ai_analysis_tasks",
     )
+    # 어떤 사용자가 분석 요청했는지 (로그 추적용)
 
+    # =========================
+    # [Celery 연결 키]
+    # =========================
     task_id = models.CharField(
         max_length=255,
         unique=True,
         db_index=True,
     )
+    # Celery 작업 고유 ID (이걸로 작업 상태 추적)
 
+    # =========================
+    # [현재 작업 상태]
+    # =========================
     status = models.CharField(
         max_length=20,
         choices=STATUS_CHOICES,
         default=STATUS_PENDING,
     )
+    # 현재 상태 (대기중 / 진행중 / 완료 / 실패)
 
+    # =========================
+    # [사용한 AI 모델]
+    # =========================
     model_name = models.CharField(
         max_length=100,
         default="upskyy/e5-small-korean",
     )
+    # 어떤 AI 모델로 분석했는지 기록
 
+    # =========================
+    # [유사도 기준값]
+    # =========================
     similarity_threshold = models.FloatField(default=0.45)
+    # 이 점수 이상만 결과로 인정 (필터 기준)
 
+    # =========================
+    # [분석 통계]
+    # =========================
     candidate_count = models.PositiveIntegerField(default=0)
+    # 비교 대상 리뷰 개수
+
     result_count = models.PositiveIntegerField(default=0)
+    # 최종 유사하다고 판단된 결과 개수
 
+    # =========================
+    # [에러 정보]
+    # =========================
     error_message = models.TextField(blank=True)
+    # 실패 시 에러 내용 저장
 
+    # =========================
+    # [시간 기록]
+    # =========================
     created_at = models.DateTimeField(auto_now_add=True)
-    started_at = models.DateTimeField(null=True, blank=True)
-    finished_at = models.DateTimeField(null=True, blank=True)
+    # 작업 생성 시간
 
+    started_at = models.DateTimeField(null=True, blank=True)
+    # 실제 작업 시작 시간
+
+    finished_at = models.DateTimeField(null=True, blank=True)
+    # 작업 완료 시간
+
+    # =========================
+    # [정렬 기준]
+    # =========================
     class Meta:
         ordering = ["-created_at"]
+    # 최신 작업이 위로 보이도록 정렬
 
+    # =========================
+    # [관리자 표시용]
+    # =========================
     def __str__(self):
         return f"{self.task_id} - {self.status}"
+    # admin / 로그에서 "task_id - 상태" 형태로 표시
 ```
-- `AIAnalysisTask` 모델을 새로 추가
-    - Celery 작업 상태를 DB에 저장하려고 만든 테이블입니다.
-    - `task_id`, `status`, `candidate_count`, `result_count`, `error_message` 같은 컬럼이 생깁니다.
-        
-- `ReviewSimilarityResult` 모델도 변경 ?? 확인해봄
-    - 이 모델이 기존에 이미 프로젝트에 있다면, 제가 적어드린 코드와 현재 코드가 완전히 같을 때는 추가 마이그레이션이 없을 수도 있습니다.
-        
-    - 하지만 필드나 제약조건이 다르면 이 부분도 DB 변경으로 잡힙니다.
 
+상태값은 왜 필요한가?
+
+코드에 있는 이 값들:
+```python
+STATUS_PENDING = "PENDING"  
+STATUS_STARTED = "STARTED"  
+STATUS_SUCCESS = "SUCCESS"  
+STATUS_FAILURE = "FAILURE"
+```
+
+이건 작업의 현재 상태를 뜻합니다.
+- `PENDING` : 아직 대기중
+- `STARTED` : 작업 시작됨
+- `SUCCESS` : 완료됨
+- `FAILURE` : 실패함
+
+이게 있으면 프론트에서도 이런 식으로 보여줄 수 있습니다.
+```
+분석 요청됨  
+분석 진행중  
+분석 완료  
+분석 실패
+```
+
+---
+`candidate_count`, `result_count`, `error_message`는 왜 저장하는가?
+
+`candidate_count`
+비교 후보가 몇 개였는지
+
+예:
+- 같은 상품 리뷰 20개 중 18개 비교 가능
+
+`result_count`
+최종적으로 몇 개가 살아남았는지
+
+예:
+- threshold 통과한 결과 3개
+
+`error_message`
+실패 이유 저장
+
+예:
+- FastAPI 연결 실패
+- 리뷰 내용 없음
+- 예외 발생
+
+이 값들이 있으면 나중에 관리자 페이지나 디버깅에서 매우 편합니다.
+
+---
+정리
+```
+ReviewSimilarityResult = AI 분석 결과 저장  
+AIAnalysisTask = Celery 작업 상태 저장
+```
+결과와 작업상태는 다르기 때문에 테이블도 나누는 것입니다.
 
 ---
 `backend/apps/ai_gateway/admin.py` : `[수정]`
@@ -291,6 +469,19 @@ class AIAnalysisTaskAdmin(admin.ModelAdmin):
     ordering = ("-created_at",)
 ```
 ---
+```
+이 코드는 리뷰 유사도 분석 작업을 Celery worker가 비동기로 처리하도록 만든 task입니다.
+
+즉,
+- Django View가 직접 FastAPI를 오래 기다리지 않고
+- Celery가 백그라운드에서 분석을 수행하며
+- 분석 상태는 AIAnalysisTask에 기록하고
+- 최종 유사도 결과는 ReviewSimilarityResult에 저장하는 역할을 합니다.
+
+한마디로,
+AI 분석을 백그라운드에서 실행하고, 상태와 결과를 DB에 저장하는 작업 코드입니다.
+```
+
 파일 생성
 ```bash
 touch apps/ai_gateway/tasks.py
@@ -309,6 +500,8 @@ from .models import ReviewSimilarityResult, AIAnalysisTask
 from .services import FastAPIClient
 
 
+# [보조 함수]
+# 유사도 점수를 사람이 보기 쉬운 문구로 바꿔줌
 def get_similarity_label(score: float) -> str:
     if score > 0.7:
         return "매우 비슷"
@@ -319,32 +512,56 @@ def get_similarity_label(score: float) -> str:
     return "관련 있음"
 
 
-@shared_task(bind=True, autoretry_for=(RequestException,), retry_backoff=True, retry_kwargs={"max_retries": 3})
+@shared_task(
+    bind=True,
+    autoretry_for=(RequestException,),
+    retry_backoff=True,
+    retry_kwargs={"max_retries": 3}
+)
 def analyze_review_similarity_task(self, review_id: int, requested_by_id: int | None = None):
     """
-    [추가]
-    기준 리뷰 1개를 기준으로 같은 상품 내 다른 리뷰들과 유사도 분석 후
-    ReviewSimilarityResult에 저장하는 Celery task
+    [역할]
+    기준 리뷰 1개를 기준으로 같은 상품의 다른 리뷰들과 유사도 분석 후
+    결과를 DB에 저장하는 Celery 비동기 작업
+
+    [전체 흐름]
+    1. task_id로 AIAnalysisTask 상태 레코드 조회
+    2. 작업 상태를 STARTED로 변경
+    3. 기준 리뷰 조회
+    4. 같은 상품의 비교 후보 리뷰 조회
+    5. 후보 리뷰들을 FastAPI로 하나씩 비교
+    6. 기준 점수 이상인 결과만 ReviewSimilarityResult에 저장
+    7. 상위 결과를 정렬해서 반환
+    8. 작업 성공/실패 상태를 AIAnalysisTask에 저장
     """
+
+    # [상수]
+    # 현재 사용하는 모델명과 유사도 기준값
     MODEL_NAME = "upskyy/e5-small-korean"
     SIMILARITY_THRESHOLD = 0.45
 
-    # [추가] task_id 기준으로 상태 레코드 조회
+    # [1] 현재 Celery task_id로 작업 상태 레코드 조회
     task_status = AIAnalysisTask.objects.get(task_id=self.request.id)
+
+    # [2] 작업 시작 상태로 변경
     task_status.status = AIAnalysisTask.STATUS_STARTED
     task_status.started_at = timezone.now()
     task_status.error_message = ""
     task_status.save(update_fields=["status", "started_at", "error_message"])
 
     try:
+        # [3] 기준이 되는 리뷰 1개 조회
         source_review = Review.objects.select_related("user", "product").get(
             id=review_id,
             is_public=True,
         )
 
+        # [예외 처리]
+        # 기준 리뷰 내용이 비어 있으면 작업 실패 처리 대상
         if not source_review.content.strip():
             raise ValueError("분석할 리뷰 내용이 없습니다.")
 
+        # [4] 같은 상품의 다른 리뷰들을 비교 후보로 조회
         candidate_reviews = (
             Review.objects
             .select_related("user")
@@ -356,27 +573,40 @@ def analyze_review_similarity_task(self, review_id: int, requested_by_id: int | 
             .order_by("-created_at")[:20]
         )
 
+        # [5] 비교 후보 개수 기록
         task_status.candidate_count = candidate_reviews.count()
         task_status.save(update_fields=["candidate_count"])
 
+        # [6] 최종 결과를 담을 리스트
         results = []
 
+        # [7] 후보 리뷰들을 하나씩 순회하며 FastAPI 유사도 분석 수행
         for candidate in candidate_reviews:
+
+            # [건너뛰기]
+            # 후보 리뷰 내용이 비어 있으면 분석하지 않음
             if not candidate.content.strip():
                 continue
 
+            # [FastAPI 호출]
+            # 기준 리뷰와 후보 리뷰의 유사도 계산
             similarity_result = FastAPIClient.get_similarity(
                 source_review.content,
                 candidate.content,
             )
 
+            # [점수 추출]
             score = round(similarity_result["similarity"], 4)
 
+            # [필터링]
+            # 기준 점수 미만이면 결과에서 제외
             if score < SIMILARITY_THRESHOLD:
                 continue
 
+            # [라벨 생성]
             similarity_label = get_similarity_label(score)
 
+            # [8] 최종 유사도 결과를 DB에 저장 또는 갱신
             saved_result, _ = ReviewSimilarityResult.objects.update_or_create(
                 source_review=source_review,
                 compared_review=candidate,
@@ -393,6 +623,7 @@ def analyze_review_similarity_task(self, review_id: int, requested_by_id: int | 
                 }
             )
 
+            # [9] 프론트에 반환할 결과 형태로 리스트에 추가
             results.append({
                 "analysis_id": saved_result.id,
                 "review_id": candidate.id,
@@ -403,14 +634,19 @@ def analyze_review_similarity_task(self, review_id: int, requested_by_id: int | 
                 "created_at": candidate.created_at.strftime("%Y-%m-%d %H:%M"),
             })
 
+        # [10] 점수 높은 순으로 정렬
         results.sort(key=lambda x: x["score"], reverse=True)
+
+        # [11] 상위 3개만 선택
         top_results = results[:3]
 
+        # [12] 작업 성공 상태 저장
         task_status.status = AIAnalysisTask.STATUS_SUCCESS
         task_status.result_count = len(top_results)
         task_status.finished_at = timezone.now()
         task_status.save(update_fields=["status", "result_count", "finished_at"])
 
+        # [13] 최종 결과 반환
         return {
             "source_review": {
                 "review_id": source_review.id,
@@ -426,18 +662,85 @@ def analyze_review_similarity_task(self, review_id: int, requested_by_id: int | 
         }
 
     except Exception as e:
+        # [실패 처리]
+        # 작업 실패 시 상태, 에러 메시지, 종료 시각 저장
         task_status.status = AIAnalysisTask.STATUS_FAILURE
         task_status.error_message = str(e)
         task_status.finished_at = timezone.now()
         task_status.save(update_fields=["status", "error_message", "finished_at"])
+
+        # [예외 다시 발생]
+        # Celery가 실패로 인식하도록 예외를 다시 올림
         raise
 ```
+이 파일은 리뷰 유사도 분석을 Celery worker가 비동기로 처리하도록 만든 task 파일입니다.  
+작업 상태는 AIAnalysisTask에 저장하고, 최종 분석 결과는 ReviewSimilarityResult에 저장합니다.
+
 ---
+이번 views의 변경은 단순 코드 스타일 변경이 아니라 처리 방식 자체가 바뀐 것입니다.
+
+기존 코드는 `views.py` 안에서 바로
+- 리뷰 조회
+- FastAPI 호출
+- 결과 저장
+- 바로 응답 반환
+까지 모두 한 번에 처리했습니다.
+
+그런데 이 방식은 리뷰 수가 많아지거나 AI 호출이 오래 걸리면,
+- 요청 응답이 느려지고
+- 사용자가 오래 기다려야 하고
+- 중간 상태를 알기 어렵고
+- 실패 시 추적이 불편해집니다
+
+그래서 변경 후 코드는
+- View는 작업 등록만
+- 실제 AI 분석은 Celery worker가 비동기로 처리
+- 진행 상태는 별도 상태 조회 API로 확인
+하는 구조로 바뀐 것입니다.
+
+---
+왜 변경되었는가
+
+핵심 이유는 아래와 같습니다.
+
+1. 요청-응답 시간을 짧게 만들기 위해서입니다
+	기존에는 사용자가 버튼을 누르면 View가 FastAPI 분석이 끝날 때까지 기다렸습니다.  
+	변경 후에는 View가 바로 `task_id`만 반환하므로 화면 응답이 빨라집니다.
+
+2. 무거운 작업을 백그라운드로 분리하기 위해서입니다
+	유사도 비교는 후보 리뷰들을 반복 비교하므로 점점 무거워질 수 있습니다.  
+	이런 작업은 View가 직접 처리하기보다 Celery worker가 맡는 구조가 더 안정적입니다.
+
+3. 작업 상태를 추적하기 위해서입니다
+	기존에는 성공/실패만 즉시 응답으로 알 수 있었지만,  
+	변경 후에는 `PENDING`, `STARTED`, `SUCCESS`, `FAILURE` 같은 상태를 따로 확인할 수 있습니다.
+
+4. View와 실제 분석 로직의 역할을 분리하기 위해서입니다
+	기존에는 View 안에 로직이 많았고,  
+
+변경 후에는
+- `views.py` = 작업 등록, 상태 조회
+- `tasks.py` = 실제 분석, 결과 저장으로 책임이 분리되었습니다.
+
+---
+변경된 코드의 전체 역할
+이 코드는 이제 `views.py`에서 직접 AI 분석을 수행하지 않고,  
+리뷰 분석 작업을 Celery에 등록한 뒤 `task_id`를 반환하며,  
+별도의 상태 조회 API를 통해 현재 작업 진행 상황과 완료 결과를 확인할 수 있게 만든 코드입니다.
+
+즉 한 줄로 정리하면:
+기존: View가 직접 분석하고 바로 결과 반환  
+변경: View는 작업만 등록하고, 실제 분석은 Celery가 처리
+
 `backend/apps/ai_gateway/views.py` : `[수정]` : 기존 동기 분석 뷰를 비동기 작업 등록 + 상태 조회 + 결과 조회 구조로 변경합니다.
 ```python
+# [수정]
+# 기존: from requests import RequestException
+# 변경: requests.exceptions 에서 직접 import
 from requests.exceptions import RequestException
 
-# [추가] Celery 작업 상태 조회용 import
+# [추가]
+# Celery 작업의 현재 상태 조회를 위해 AsyncResult import 추가
 from celery.result import AsyncResult
 
 from rest_framework.views import APIView
@@ -453,14 +756,17 @@ from .serializers import (
     SimilarityRequestSerializer,
 )
 
-# [유지] FastAPI 직접 호출은 Embedding / Similarity API에서 계속 사용
+# [유지]
+# Embedding / Similarity API는 여전히 FastAPI를 직접 호출
 from .services import FastAPIClient
 
-# [수정] 기존 ReviewSimilarityResult import만 있던 구조에서
-#        비동기 작업 상태 저장용 AIAnalysisTask import 추가
+# [수정]
+# 기존: ReviewSimilarityResult 를 import 해서 View 안에서 직접 저장했음
+# 변경: 비동기 작업 상태 저장용 AIAnalysisTask import
 from .models import AIAnalysisTask
 
-# [추가] Celery task import
+# [추가]
+# 실제 AI 분석은 Celery task로 이동했으므로 task import 추가
 from .tasks import analyze_review_similarity_task
 
 
@@ -527,9 +833,11 @@ class SimilarityAPIView(APIView):
 
 # =========================================================
 # [삭제]
-# 기존 get_similarity_label() 함수는 동기 분석 로직에서만 사용했음
-# 이제 실제 유사도 계산/저장 로직은 Celery task(tasks.py)로 이동했으므로
-# views.py에서는 더 이상 사용하지 않음
+# 기존 코드에는 View 안에서 직접 유사도 라벨을 만들기 위해
+# get_similarity_label() 함수가 있었음
+#
+# 변경 후에는 실제 유사도 계산과 라벨 생성이 tasks.py 로 이동했으므로
+# views.py 에서는 더 이상 이 함수가 필요 없어짐
 # =========================================================
 # def get_similarity_label(score: float) -> str:
 #     if score > 0.7:
@@ -544,35 +852,51 @@ class SimilarityAPIView(APIView):
 class ReviewAnalyzeAPIView(APIView):
     """
     [수정]
-    기존: GET /ai/reviews/<review_id>/analyze/
-          -> View 안에서 FastAPI 직접 호출 + 결과 저장 + 즉시 반환
+    기존:
+    GET /ai/reviews/<review_id>/analyze/
+    -> View 안에서 FastAPI 직접 호출
+    -> DB 저장
+    -> 결과 즉시 반환
 
-    변경: POST /ai/reviews/<review_id>/analyze/
-          -> Celery 작업만 등록하고 task_id 반환
+    변경:
+    POST /ai/reviews/<review_id>/analyze/
+    -> Celery 작업만 등록
+    -> task_id 반환
     """
     permission_classes = [AllowAny]
 
+    # [수정]
+    # 기존 코드에는 SIMILARITY_THRESHOLD, MODEL_NAME 상수가 클래스 내부에 있었음
+    # 변경 후에는 실제 분석 로직이 tasks.py 로 이동했으므로 여기서는 제거됨
+
     def post(self, request, review_id):
-        # [유지] 기준 리뷰 존재 여부 먼저 확인
+        # [유지]
+        # 기준 리뷰 존재 여부 먼저 확인
         source_review = get_object_or_404(
             Review.objects.select_related("user", "product"),
             id=review_id,
             is_public=True,
         )
 
-        # [유지] 기준 리뷰 내용이 비어 있으면 에러 반환
+        # [유지]
+        # 기준 리뷰 내용이 비어 있으면 작업 등록 전 바로 에러 반환
         if not source_review.content.strip():
             return Response(
                 {"detail": "분석할 리뷰 내용이 없습니다."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        # [추가] 로그인 사용자인 경우 요청자 ID 저장
+        # [추가]
+        # 로그인 사용자인 경우 요청자 ID 저장
         requested_by_id = request.user.id if request.user.is_authenticated else None
 
         # =========================================================
         # [추가]
-        # Celery worker에게 실제 AI 분석 작업을 위임
+        # 기존 코드에서는 여기서 직접 FastAPI 호출 + 결과 저장을 했음
+        #
+        # 변경 후에는 Celery task에게 실제 분석 작업을 맡김
+        # -> delay() 호출 시 비동기 작업 등록
+        # -> 즉시 task_id 반환 가능
         # =========================================================
         async_result = analyze_review_similarity_task.delay(
             review_id=source_review.id,
@@ -581,7 +905,9 @@ class ReviewAnalyzeAPIView(APIView):
 
         # =========================================================
         # [추가]
-        # 작업 상태를 DB에 먼저 저장
+        # 기존 코드에는 없었음
+        # 작업 시작 전 DB에 작업 상태를 먼저 저장
+        # 나중에 상태 조회 API에서 이 레코드를 사용함
         # =========================================================
         AIAnalysisTask.objects.create(
             source_review=source_review,
@@ -592,7 +918,15 @@ class ReviewAnalyzeAPIView(APIView):
             similarity_threshold=0.45,
         )
 
-        # [수정] 기존 200 OK + 즉시 결과 반환 -> 202 ACCEPTED + task_id 반환
+        # =========================================================
+        # [수정]
+        # 기존:
+        # 200 OK + 분석 결과(JSON) 즉시 반환
+        #
+        # 변경:
+        # 202 ACCEPTED + task_id만 반환
+        # 실제 결과는 나중에 상태 조회 API로 확인
+        # =========================================================
         return Response(
             {
                 "detail": "AI 분석 작업이 등록되었습니다.",
@@ -609,16 +943,25 @@ class ReviewAnalyzeTaskStatusAPIView(APIView):
     [추가]
     Celery 작업 상태 조회 API
     GET /ai/tasks/<task_id>/status/
+
+    역할:
+    - 현재 작업 상태 확인
+    - DB에 기록된 상태 확인
+    - 작업 성공 시 최종 결과도 함께 반환
     """
     permission_classes = [AllowAny]
 
     def get(self, request, task_id):
-        # [추가] DB에 저장된 작업 상태 조회
+        # [추가]
+        # DB에 저장된 작업 상태 레코드 조회
         task_obj = get_object_or_404(AIAnalysisTask, task_id=task_id)
 
-        # [추가] Celery 백엔드 기준 실제 task 상태 조회
+        # [추가]
+        # Celery 백엔드 기준 실제 task 상태 조회
         async_result = AsyncResult(task_id)
 
+        # [추가]
+        # 상태 조회용 기본 응답 데이터 구성
         response_data = {
             "task_id": task_id,
             "status": async_result.status,
@@ -631,22 +974,67 @@ class ReviewAnalyzeTaskStatusAPIView(APIView):
             "finished_at": task_obj.finished_at,
         }
 
-        # [추가] 성공 시 Celery task 반환 데이터까지 포함
+        # [추가]
+        # 작업이 성공 완료된 경우 Celery task가 반환한 최종 결과 포함
         if async_result.successful():
             response_data["result"] = async_result.result
 
         return Response(response_data, status=status.HTTP_200_OK)
 ```
-핵심 변경은 아래입니다.
-- `EmbeddingAPIView`, `SimilarityAPIView`는 유지
-- 기존 `ReviewAnalyzeAPIView`의 동기 FastAPI 직접 호출 방식 삭제
-- `ReviewAnalyzeAPIView`를 Celery 작업 등록 방식으로 수정
-- `AIAnalysisTask` import 추가
-- `analyze_review_similarity_task` import 추가
-- `ReviewAnalyzeTaskStatusAPIView` 새로 추가
-- `get_similarity_label()` 함수는 이 파일에서 더 이상 사용하지 않으므로 삭제
+
+변경 전
+- `GET /ai/reviews/<review_id>/analyze/`
+- View가 직접 FastAPI 호출
+- View가 직접 DB 저장
+- 바로 결과 반환
+
+변경 후
+- `POST /ai/reviews/<review_id>/analyze/`
+- View는 Celery 작업 등록만 수행
+- `task_id` 반환
+- 별도 상태 조회 API 추가
+- 실제 분석/저장은 `tasks.py`에서 처리
 
 ---
+`tasks/<task_id>/status/` URL을 추가한 이유는
+비동기 작업(Celery)의 진행 상태와 결과를 나중에 조회하기 위해서입니다.
+
+기존 (동기 방식)은 
+```
+요청 → View → FastAPI → 결과 생성 → 바로 응답
+```
+- 요청하면 바로 결과가 나옴
+- 별도의 조회 API 필요 없음
+
+그러나 변경된 (비동기 방식)은
+```
+요청 → View → Celery 작업 등록 → task_id 반환
+                      ↓
+                (백그라운드에서 실행)
+                      ↓
+                결과 저장
+
+사용자 → 상태 조회 API → 결과 확인(tasks/<task_id>/status/)
+```
+
+```
+요청(사용자가 버튼을 누르는 순간)
+→ backend/static/js/product-detail.js 에서 분석 요청
+→ backend/apps/ai_gateway/views.py 에서 Celery 작업 등록
+→ backend/apps/ai_gateway/tasks.py 작업 연결
+→ task_id 반환
+                      ↓
+                backend/apps/ai_gateway/tasks.py 가 백그라운드에서 실행
+                      ↓
+                backend/apps/ai_gateway/models.py 에 결과 저장
+
+사용자(같은 사용자가, 같은 화면에서 조금 뒤에 결과가 나왔는지 다시 확인하는 단계)
+→ backend/static/js/product-detail.js 에서 상태 조회 요청
+→ backend/apps/ai_gateway/views.py 에서 상태 조회 API 처리
+→ 결과 확인 (tasks/<task_id>/status/) json 조회용
+```
+
+
 `backend/apps/ai_gateway/urls.py` : `[수정추가]`
 ```python
 from django.urls import path
@@ -660,14 +1048,24 @@ urlpatterns = [
 ]
 ```
 
+---
+```
+기존: 버튼 클릭 → 바로 결과 반환 (동기 방식)  
+  
+변경: 버튼 클릭 → 작업 등록 → 나중에 결과 조회 (비동기 방식)
+```
+즉
+```
+AI 작업이 오래 걸리기 때문에  
+→ 사용자 응답을 빠르게 하기 위해  
+→ Celery 기반 비동기 구조로 변경되었습니다.
+```
+
 `backend/static/js/product-detail.js` : `[수정]`
-기존의 버튼 클릭 → 바로 결과 받기를  
-버튼 클릭 → 작업 등록 → polling → 완료 시 결과 표시로 바꿉니다.
 ```js
 document.addEventListener("DOMContentLoaded", function () {
     const productDetailBox = document.getElementById("productDetailBox");
 
-    // [수정] 주석 문구 제거, 값 자체는 동일
     const productId = window.PRODUCT_ID;
 
     const editBtn = document.getElementById("editBtn");
@@ -680,7 +1078,6 @@ document.addEventListener("DOMContentLoaded", function () {
     const previewBox = document.getElementById("previewBox");
     const reviewList = document.getElementById("reviewList");
 
-    // [수정] 설명 주석 제거, 동작은 동일
     const api = window.api || axios;
 
     function getAuthHeaders(extraHeaders = {}) {
@@ -711,7 +1108,6 @@ document.addEventListener("DOMContentLoaded", function () {
                 <p class="muted">등록일: ${product.created_at || "-"}</p>
             `;
         } catch (error) {
-            console.error("상품 상세 조회 실패:", error.response?.data || error);
             productDetailBox.innerHTML = `<p>상품 상세 정보를 불러오지 못했습니다.</p>`;
         }
     }
@@ -729,208 +1125,80 @@ document.addEventListener("DOMContentLoaded", function () {
                 return;
             }
 
-            // ============================
-            // [수정] 안내 문구를 비동기 처리 기준으로 변경
-            // ============================
+            // [수정] 안내 문구를 "비동기 처리" 기준으로 변경
             const guideBox = document.createElement("div");
-            guideBox.className = "review-guide-box";
             guideBox.innerHTML = `
-                <p class="review-guide-text">
-                    작성한 리뷰와 비슷한 다른 사용자의 후기를 비동기로 찾아 보여줍니다.<br>
-                    분석에는 몇 초 정도 걸릴 수 있습니다.
+                <p>
+                    비슷한 후기를 비동기로 찾아 보여줍니다.
                 </p>
             `;
             reviewList.appendChild(guideBox);
 
             reviews.forEach((review) => {
-                let imagesHtml = "";
-
-                if (review.images && review.images.length > 0) {
-                    imagesHtml = `
-                        <div style="margin-top: 12px; display:flex; flex-wrap:wrap; gap:10px;">
-                            ${review.images.map((img) => `
-                                <img
-                                    src="${img.image}"
-                                    alt="리뷰 이미지"
-                                    style="width:120px; height:120px; object-fit:cover; border-radius:8px;"
-                                >
-                            `).join("")}
-                        </div>
-                    `;
-                }
-
                 const card = document.createElement("div");
-                card.className = "review-card";
-                card.style.border = "1px solid #ddd";
-                card.style.borderRadius = "8px";
-                card.style.padding = "16px";
-                card.style.marginBottom = "12px";
 
                 card.innerHTML = `
-                    <p><strong>작성자:</strong> ${review.username || review.user || "-"}</p>
-                    <p><strong>평점:</strong> ${review.rating ?? "-"}</p>
-                    <p style="margin-top: 10px;">${review.content || ""}</p>
-                    ${imagesHtml}
-                    <p class="muted" style="margin-top: 10px;">작성일: ${review.created_at || "-"}</p>
+                    <p>${review.content}</p>
 
-                    <!-- [수정] 버튼 인라인 스타일 제거 -->
-                    <button
-                        class="ai-analyze-btn"
-                        data-review-id="${review.id}"
-                    >
+                    <!-- [수정] 버튼 스타일 제거 (UI 분리) -->
+                    <button class="ai-analyze-btn" data-review-id="${review.id}">
                         비슷한 후기 보기
                     </button>
 
-                    <!-- [수정] 결과 박스 스타일을 최소화 -->
-                    <div
-                        class="ai-result-box"
-                        id="ai-result-${review.id}"
-                        style="display:none;"
-                    ></div>
+                    <!-- [수정] 결과 영역 스타일 최소화 -->
+                    <div id="ai-result-${review.id}" style="display:none;"></div>
                 `;
 
                 reviewList.appendChild(card);
             });
 
-            // [유지] 리뷰 렌더링 후 버튼 이벤트 연결
             bindAnalyzeButtons();
 
         } catch (error) {
-            console.error("리뷰 목록 조회 실패:", error.response?.data || error);
             reviewList.innerHTML = "<p>리뷰 목록을 불러오지 못했습니다.</p>";
         }
     }
 
-    // ============================
-    // [유지] 유사도 텍스트 변환 함수
-    // ============================
-    function getSimilarityLabel(score) {
-        if (score > 0.7) return "매우 비슷";
-        if (score > 0.5) return "비슷";
-        if (score > 0.3) return "약간 비슷";
-        return "관련 있음";
-    }
-
-    // ============================
-    // [유지] 점수별 설명 문구 함수
-    // ============================
-    function getSimilarityDescription(score) {
-        if (score > 0.7) return "표현과 느낌이 매우 비슷한 후기예요.";
-        if (score > 0.5) return "비슷한 의견을 담고 있는 후기예요.";
-        if (score > 0.3) return "어느 정도 관련 있는 후기예요.";
-        return "참고용으로 볼 수 있는 후기예요.";
-    }
-
     // =========================================================
-    // [추가] Celery task 상태 polling 함수
+    // [추가] Celery 상태 polling 함수
+    // 기존 코드에는 없음
     // =========================================================
     async function pollTaskStatus(taskId, reviewId, button, resultBox) {
-        const maxTry = 20;
-        let currentTry = 0;
-
         const intervalId = setInterval(async () => {
-            currentTry += 1;
-
             try {
+                // [추가] 상태 조회 API 호출
                 const response = await api.get(`/ai/tasks/${taskId}/status/`);
                 const data = response.data;
 
+                // [추가] 작업 완료 시 결과 렌더링
                 if (data.status === "SUCCESS") {
                     clearInterval(intervalId);
 
                     const result = data.result || {};
 
-                    if (!result.similar_reviews || result.similar_reviews.length === 0) {
-                        resultBox.innerHTML = `
-                            <div class="ai-result-inner">
-                                <p><strong>이 리뷰와 비슷한 다른 후기</strong></p>
-                                <p>충분히 비슷한 후기를 찾지 못했어요.</p>
-                                <p class="ai-sub-guide">
-                                    비교할 후기가 부족하거나, 현재 후기들과 표현 차이가 클 수 있어요.
-                                </p>
-                            </div>
-                        `;
-                    } else {
-                        resultBox.innerHTML = `
-                            <div class="ai-result-inner">
-                                <p><strong>이 리뷰와 비슷한 다른 후기</strong></p>
-                                <p>비슷한 후기 ${result.similar_reviews.length}개를 찾았어요.</p>
-                                <p class="ai-sub-guide">
-                                    같은 상품에 대해 비슷하게 느낀 사용자 후기입니다.
-                                </p>
-
-                                <ul class="ai-similar-review-list">
-                                    ${result.similar_reviews.map((item) => `
-                                        <li class="ai-similar-review-item">
-                                            <p><strong>${item.label || getSimilarityLabel(item.score)}</strong> : ${item.content}</p>
-                                            <p><small>작성자: ${item.username}</small></p>
-                                            <p><small>${getSimilarityDescription(item.score)}</small></p>
-                                            <p><small>유사도 ${item.score.toFixed(2)} / 작성일 ${item.created_at}</small></p>
-                                            <p><small>AI 결과 ID: ${item.analysis_id}</small></p>
-                                        </li>
-                                    `).join("")}
-                                </ul>
-                            </div>
-                        `;
-                    }
+                    resultBox.innerHTML = `
+                        <p>결과 개수: ${result.similar_reviews?.length || 0}</p>
+                    `;
 
                     button.disabled = false;
-
-                    // [수정] 버튼 문구를 원래 문구로 복원
                     button.textContent = "비슷한 후기 보기";
                     return;
                 }
 
-                if (data.status === "FAILURE") {
-                    clearInterval(intervalId);
-                    resultBox.innerHTML = `
-                        <div class="ai-result-inner error">
-                            <p>${data.error_message || "AI 분석 중 오류가 발생했습니다."}</p>
-                        </div>
-                    `;
-                    button.disabled = false;
+                // [추가] 진행 중 상태 표시
+                resultBox.innerHTML = `<p>분석 중... (${data.status})</p>`;
 
-                    // [수정] 실패 시에도 버튼 문구 복원
-                    button.textContent = "비슷한 후기 보기";
-                    return;
-                }
-
-                resultBox.innerHTML = `
-                    <div class="ai-result-inner">
-                        <p>AI가 후기를 분석 중입니다...</p>
-                        <p class="ai-sub-guide">현재 상태: ${data.status}</p>
-                    </div>
-                `;
-
-                if (currentTry >= maxTry) {
-                    clearInterval(intervalId);
-                    resultBox.innerHTML = `
-                        <div class="ai-result-inner error">
-                            <p>분석 시간이 길어지고 있습니다. 잠시 후 다시 확인해주세요.</p>
-                        </div>
-                    `;
-                    button.disabled = false;
-                    button.textContent = "비슷한 후기 보기";
-                }
             } catch (error) {
                 clearInterval(intervalId);
-                console.error("작업 상태 조회 실패:", error.response?.data || error);
-                resultBox.innerHTML = `
-                    <div class="ai-result-inner error">
-                        <p>작업 상태를 확인하는 중 오류가 발생했습니다.</p>
-                    </div>
-                `;
-                button.disabled = false;
-                button.textContent = "비슷한 후기 보기";
             }
         }, 1500);
     }
 
-    // ============================
-    // [수정] AI 분석 버튼 클릭 이벤트
-    // 기존: GET으로 즉시 분석 결과 요청
-    // 변경: POST로 작업 등록 후 polling
-    // ============================
+    // =========================================================
+    // [핵심 수정] 버튼 클릭 로직 변경
+    // 기존: GET → 즉시 결과 반환
+    // 변경: POST → 작업 등록 → polling
+    // =========================================================
     function bindAnalyzeButtons() {
         const buttons = document.querySelectorAll(".ai-analyze-btn");
 
@@ -941,166 +1209,33 @@ document.addEventListener("DOMContentLoaded", function () {
 
                 button.disabled = true;
 
-                // [수정] 버튼 문구 변경
+                // [수정] 문구 변경 (즉시 분석 → 작업 등록)
                 button.textContent = "작업 등록 중...";
 
                 resultBox.style.display = "block";
-
-                // [수정] 즉시 분석 문구 -> 작업 등록 문구
-                resultBox.innerHTML = "<p>AI 분석 작업을 등록하는 중입니다...</p>";
+                resultBox.innerHTML = "<p>작업 등록 중...</p>";
 
                 try {
-                    // [수정] GET -> POST
-                    const response = await api.post(`/ai/reviews/${reviewId}/analyze/`, {}, {
-                        headers: getAuthHeaders(),
-                    });
+                    // [핵심 수정]
+                    // 기존: GET /ai/reviews/{id}/analyze/
+                    // 변경: POST → Celery 작업 등록
+                    const response = await api.post(
+                        `/ai/reviews/${reviewId}/analyze/`,
+                        {},
+                        { headers: getAuthHeaders() }
+                    );
 
-                    const data = response.data;
-                    const taskId = data.task_id;
+                    const taskId = response.data.task_id;
 
-                    if (!taskId) {
-                        throw new Error("task_id를 받지 못했습니다.");
-                    }
-
-                    // [추가] 작업 등록 후 polling 시작
+                    // [추가] task_id 기반 polling 시작
                     button.textContent = "분석 진행 중...";
                     pollTaskStatus(taskId, reviewId, button, resultBox);
 
                 } catch (error) {
-                    console.error("AI 분석 작업 등록 실패:", error.response?.data || error);
-
-                    const detail =
-                        error.response?.data?.detail || "AI 분석 작업 등록 중 오류가 발생했습니다.";
-
-                    resultBox.innerHTML = `
-                        <div class="ai-result-inner error">
-                            <p>${detail}</p>
-                        </div>
-                    `;
-
                     button.disabled = false;
-
-                    // [수정] 버튼 문구를 기존 UI에 맞게 복원
                     button.textContent = "비슷한 후기 보기";
                 }
             });
-        });
-    }
-
-    if (imageInput && previewBox) {
-        imageInput.addEventListener("change", function () {
-            previewBox.innerHTML = "";
-
-            Array.from(imageInput.files).forEach((file) => {
-                if (!file.type.startsWith("image/")) return;
-
-                const reader = new FileReader();
-
-                reader.onload = function (e) {
-                    const img = document.createElement("img");
-                    img.src = e.target.result;
-                    img.className = "preview-image";
-                    img.style.width = "120px";
-                    img.style.height = "120px";
-                    img.style.objectFit = "cover";
-                    img.style.marginRight = "10px";
-                    img.style.marginTop = "10px";
-                    img.style.borderRadius = "8px";
-                    previewBox.appendChild(img);
-                };
-
-                reader.readAsDataURL(file);
-            });
-        });
-    }
-
-    if (reviewForm) {
-        reviewForm.addEventListener("submit", async function (e) {
-            e.preventDefault();
-
-            const content = contentInput.value.trim();
-            const rating = ratingInput.value.trim();
-
-            if (!content || !rating) {
-                alert("리뷰 내용과 평점을 입력해주세요.");
-                return;
-            }
-
-            try {
-                const formData = new FormData();
-                formData.append("product", productId);
-                formData.append("content", content);
-                formData.append("rating", rating);
-
-                if (imageInput && imageInput.files.length > 0) {
-                    for (let i = 0; i < imageInput.files.length; i++) {
-                        formData.append("uploaded_images", imageInput.files[i]);
-                    }
-                }
-
-                // [삭제] 디버깅용 formData 콘솔 출력 제거
-                // for (const pair of formData.entries()) {
-                //     console.log(pair[0], pair[1]);
-                // }
-
-                await api.post("/reviews/", formData, {
-                    headers: getAuthHeaders({
-                        "Content-Type": "multipart/form-data",
-                    }),
-                });
-
-                // [삭제] 리뷰 등록 성공 콘솔 로그 제거
-                // console.log("리뷰 등록 성공:", response.data);
-
-                alert("리뷰가 등록되었습니다.");
-
-                reviewForm.reset();
-                previewBox.innerHTML = "";
-
-                await loadReviews();
-            } catch (error) {
-                console.error("리뷰 등록 실패:", error.response?.data || error);
-
-                if (error.response?.status === 401) {
-                    alert("리뷰 작성은 로그인 후 가능합니다.");
-                    return;
-                }
-
-                alert("리뷰 등록 실패: " + JSON.stringify(error.response?.data || {}));
-            }
-        });
-    }
-
-    if (editBtn) {
-        editBtn.addEventListener("click", function () {
-            // [삭제] 디버깅용 로그 제거
-            // console.log("수정 버튼 클릭");
-            window.location.href = `/products/${productId}/update/`;
-        });
-    }
-
-    if (deleteBtn) {
-        deleteBtn.addEventListener("click", async function () {
-            const confirmDelete = confirm("정말 이 상품을 삭제하시겠습니까?");
-            if (!confirmDelete) return;
-
-            try {
-                await api.delete(`/products/api/${productId}/`, {
-                    headers: getAuthHeaders(),
-                });
-
-                alert("상품이 삭제되었습니다.");
-                window.location.href = "/products/";
-            } catch (error) {
-                console.error("상품 삭제 실패:", error.response?.data || error);
-
-                if (error.response?.status === 401) {
-                    alert("상품 삭제는 로그인 후 가능합니다.");
-                    return;
-                }
-
-                alert("상품 삭제에 실패했습니다.");
-            }
         });
     }
 
@@ -1108,18 +1243,84 @@ document.addEventListener("DOMContentLoaded", function () {
     loadReviews();
 });
 ```
-주요 변경점
-- 안내 문구 변경
-- AI 버튼 스타일 일부 단순화
-- `api.get("/ai/reviews/.../analyze/")` → `api.post(...)` 로 변경
-- 즉시 결과 반환 방식 제거
-- `pollTaskStatus()` 함수 추가
-- 버튼 문구 흐름 변경
-- 등록 성공 후 `task_id`로 상태 조회
-- 리뷰 등록 시 `formData.entries()` 출력 로그 제거
-- edit 버튼의 `console.log("수정 버튼 클릭")` 제거
-- 결과 문구가 더 자연스럽게 변경됨
+
+핵심 변경 포인트 요약
+```
+1. GET → POST 변경
+   → 즉시 결과 → 작업 등록 구조로 변경
+
+2. pollTaskStatus() 추가
+   → 결과를 나중에 반복 조회
+
+3. /ai/tasks/<task_id>/status/ 사용
+   → 비동기 결과 확인 API
+
+4. 버튼 흐름 변경
+   분석 → 작업 등록 → 진행 중
+```
+
 ---
+YAML 파일 역할
+```
+# ---------------------------------------------------------
+# 본 파일은 Docker Compose 설정 파일로,
+# 여러 개의 컨테이너(Django, PostgreSQL, Redis, Celery)를
+# 하나의 서비스처럼 동시에 실행하고 관리하기 위한 설정 파일입니다.
+#
+# YAML 파일은 사람이 읽기 쉬운 설정 파일 형식으로,
+# 서비스 구조, 실행 명령어, 환경 변수, 네트워크 등을 정의하는 역할을 합니다.
+#
+# 즉, 이 파일 하나로:
+# - DB 서버
+# - Django 서버
+# - Celery 작업 서버
+# - Redis 메시지 큐
+# 를 한 번에 실행할 수 있도록 구성합니다.
+# ---------------------------------------------------------
+```
+
+docker-compose.yml 전체 역할
+```
+이 파일은 Django 프로젝트 실행에 필요한 여러 서버(DB, Redis, Celery 등)를
+Docker 컨테이너로 묶어서 한 번에 실행하도록 설정하는 파일입니다.
+```
+
+코드 이해용
+```
+# db      → PostgreSQL 데이터베이스
+# web     → Django 서버 (API 처리)
+# celery  → 비동기 작업 처리 (AI 분석)
+# redis   → Celery 메시지 큐 (작업 전달)
+
+# 이 파일은 Django, DB, Redis, Celery를 하나의 시스템으로 구성하여  
+# 비동기 처리까지 포함된 전체 백엔드 환경을 Docker로 실행하기 위한 설정입니다.
+```
+
+가장 핵심적인 docker-compose의 역할은
+여러 컨테이너를 하나씩 따로 실행하지 않고 한 번에 묶어서 실행하게 해주는 설정 파일입니다.
+```
+컨테이너를 4개를 만들었으니 원래는 이렇게 각각 컨테이너를 실행시켜야 합니다.
+1. PostgreSQL 실행  
+2. Redis 실행  
+3. Django 실행  
+4. Celery 실행
+```
+이걸 하나하나 직접 명령어로 띄우려면 번거롭고, 순서도 맞춰야 하고, 설정도 각각 넣어야 합니다.
+
+그런데 docker-compose.yml 이 있으면
+
+이 파일 안에 미리
+- 어떤 컨테이너를 띄울지
+- 어떤 이름으로 띄울지
+- 어떤 포트를 쓸지
+- 어떤 환경변수를 쓸지
+- 누가 누구를 먼저 실행해야 하는지를 다 적어두기 때문에, 명령어 한 번으로 됩니다.
+
+실행명령어 하나로 해결됩니다.
+```bash
+docker compose up -d
+```
+
 `backend/docker-compose.yml`
 ```yaml
 version: "3.9"
@@ -1201,14 +1402,6 @@ networks:
   app-network:
     driver: bridge
 ```
-지금 구조는 한 프로젝트 안에서 아래 컨테이너들이 같이 움직여야 합니다.
-- `db` → PostgreSQL
-- `web` → Django/DRF
-- `celery` → 비동기 worker
-- `redis` → Celery 큐
-    
-즉, 따로 두 개의 compose 파일로 관리하는 것보다  
-하나의 `docker-compose.yml`에서 같이 올리는 게 훨씬 관리가 편합니다.
 
 `backend/.env`
 ```env
@@ -1226,35 +1419,64 @@ REDIS_URL=redis://127.0.0.1:6379/0
 FASTAPI_BASE_URL=http://127.0.0.1:8001
 ```
 ---
+```
+# ---------------------------------------------------------
+# 본 파일은 Docker 이미지를 생성하기 위한 Dockerfile입니다.
+#
+# Python 실행 환경을 구성하고,
+# 필요한 패키지를 설치한 뒤,
+# Django 프로젝트 코드를 컨테이너 안에 복사하여
+# 실행 가능한 상태로 만드는 역할을 합니다.
+#
+# 즉, 이 프로젝트를 실행할 수 있는 서버 환경을 자동으로 만드는 설계도입니다.
+# ---------------------------------------------------------
+```
+
+왜 도커 이미지라고 부르는가?
+실행 환경을 그대로 복제해서 어디서든 똑같이 실행할 수 있기 때문에 이미지라고 부릅니다.
+즉 진짜 이미지처럼 찍어두는 형태라서 그렇게 부르는것이 아니고 사진에 찍어두듯 복제해둔다는 의미로 이미지라는 표현을 사용합니다. 실제 IT에서 자주 쓰는 의미이며 
+- OS 이미지 (윈도우 ISO)
+- VM 이미지
+- 디스크 이미지 등으로 불리며 복사해서 실행 가능하다는 의미로 사용됩니다.
+
+한 줄 핵심
+```
+이 파일은 Django 프로젝트가 실행될 수 있는 환경(Python + 라이브러리)을 만드는 설정 파일입니다.
+```
+
 파일 생성
 ```bash
 touch Dockerfile
 ```
 
+docker-compose와 연결해서 이해하면
+```
+docker-compose.yml → 컨테이너를 어떻게 실행할지  
+Dockerfile → 컨테이너 안을 어떻게 만들지
+```
+
 `backend/Dockerfile`
 ```dockerfile
-# Python 버전
 FROM python:3.12-slim
+# → Python이 설치된 기본 환경 가져오기
 
-# 작업 디렉토리
 WORKDIR /app
+# → 컨테이너 내부 작업 폴더 설정
 
-# 시스템 패키지
-RUN apt-get update && apt-get install -y \
-    build-essential \
-    && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y build-essential
+# → 필요한 시스템 패키지 설치
 
-# requirements 먼저 복사
 COPY requirements.txt .
+# → 라이브러리 목록 복사
 
-# 패키지 설치
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install -r requirements.txt
+# → Python 패키지 설치
 
-# 전체 코드 복사
 COPY . .
+# → 프로젝트 전체 코드 복사
 
-# 포트
 EXPOSE 8000
+# → 컨테이너에서 사용할 포트 지정
 ```
 
 `backend/mysite/settings.py` 수정
@@ -1298,7 +1520,7 @@ python manage.py showmigrations
 python manage.py migrate
 ```
 ---
-build 필요 없는 경우:
+### build가 필요 없는 경우:
 그냥 코드 수정했을때 예를 들어
 - `.py` 수정 (views.py, tasks.py 등)
 - `.html`, `.js`, `.css` 수정
@@ -1313,7 +1535,7 @@ docker compose restart
 - 컨테이너는 이미 실행 중
 - 재시작만 하면 반영됨
 
-### build 해야 하는 경우
+### build 해야 하는 경우:
 이미지 자체가 바뀌는 경우
 ① requirements.txt 변경
 - 라이브러리 추가/삭제
@@ -1324,15 +1546,15 @@ docker compose restart
 ⑤ 패키지 설치 방식 변경 (uv / pip 등)
 
 ---
-정상 작동 확인 체크리스트
+정상 작동 확인 체크리스트(로그메시지)
 
 Redis 연결 확인 : 로그에 이런거 나오면 성공
-```
+```bash
 Connected to redis://redis:6379/0
 ```
 
 Celery worker 확인
-```
+```bash
 [INFO/MainProcess] celery@... ready.
 ```
 
@@ -1409,8 +1631,7 @@ uvicorn main:app --reload --port 8001
 ```
 
 ### 📊 Celery + Redis 적용 전/후 성능 비교 분석
-![[Pasted image 20260319172003.png]]
-
+![[Pasted image 20260329230726.png]]
 1️⃣ Celery 적용 이전 (동기 처리)
 - 요청 URL: `reviews/?product=14`
 - 총 응답 시간: 약 20.67 ms

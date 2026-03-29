@@ -1,49 +1,96 @@
-추론한 모델의 DB를 저장해야 하는데 이건 보통 DRF에 저장하는것이 더 낫습니다.
+```
+기존: FastAPI → 결과만 반환 (저장 없음)  
+변경: FastAPI → 계산만 / DRF → 결과를 DB에 저장
+```
 
-이 프로젝트 구조에서는 보통 이렇게 가는 게 가장 안정적입니다.
-- **DRF**: 사용자, 상품, 리뷰, AI 결과 저장
-- **FastAPI**: 모델 로딩, 추론, 결과 반환만 담당
-    
-즉, FastAPI는 계산 서버, DRF는 서비스 서버 + DB 서버로 두는 게 좋습니다.
+기존 방식 vs 변경된 방식의 흐름도를 비교합니다
+```
+기존방식:
+JS → DRF → FastAPI → 결과 반환 → 화면 출력 (끝)
 
-왜 DRF에 저장하는 게 좋은 이유는 다음과 같습니다.
+문제
+- 결과가 저장되지 않음
+- 나중에 다시 확인 불가
+-------------------------------------------
+변경 방식:
+JS → DRF → FastAPI → 결과 받음 → DRF DB 저장 → 화면 출력
 
-원본 데이터가 이미 DRF 쪽에 있습니다.
-지금 기준 데이터는 이미 DRF 쪽에 있습니다.
-- 상품
-- 리뷰
-- 사용자
-- 크롤링 데이터
-- 화면 렌더링
-    
-그러면 추론 결과도 같은 쪽에 붙는 게 자연스럽습니다.
+핵심 변화
+- AI 결과를 DB에 저장함
+- 서비스 기능으로 발전
+```
 
-예를 들면:
-- 어떤 리뷰를 분석했는지
-- 어떤 상품에 대한 추천인지
-- 어떤 사용자가 버튼을 눌렀는지
+### 추가된 것 (NEW)
+
+✅ `models.py`
+역할: AI 결과를 DB에 저장
+- 어떤 리뷰를 분석했는지  
+- 어떤 리뷰랑 비교했는지  
+- 유사도 점수  
 - 언제 분석했는지
-    
-이런 연결이 전부 DRF DB와 관계있습니다.
+AI 분석 결과를 저장하는 테이블
+
+✅ `admin.py`
+역할: 관리자 페이지에서 결과 확인
+- 저장된 AI 결과 목록 확인  
+- 검색 / 필터 가능 
+저장된 AI 결과를 눈으로 보는 곳
 
 ---
-추가/수정 파일 목록
+### 수정된 것 (CHANGED)
 
-새로 추가되는 파일
-- `backend/apps/ai_gateway/models.py`
-- `backend/apps/ai_gateway/admin.py`
-    
+✅ `views.py`
+역할: 핵심 로직 변경된 파일 (가장 중요)
 
-수정되는 파일
-- `backend/apps/ai_gateway/views.py`
-- `backend/apps/ai_gateway/urls.py`
-- `backend/static/js/product-detail.js`
-- `templates/products/product_detail.html`
-- `static/css/style.css`
+기존
+```
+FastAPI 결과 → 그대로 반환
+```
+
+변경
+```
+FastAPI 결과 → DB 저장 → 반환
+```
+
+추가된 핵심 코드
+```python
+ReviewSimilarityResult.objects.update_or_create(...)
+```
+AI 결과를 DB에 저장하도록 변경됨
+
+
+✅ `urls.py`
+역할: API 주소 연결
+```
+/ai/reviews/<id>/analyze/
+```
+거의 변화 없음 (구조 유지)
+
+
+✅ `product-detail.js`
+역할: 화면에서 API 호출 + 결과 출력
+
+변경된 부분
+- label 추가 (비슷/매우비슷)  
+- analysis_id 추가 (DB 저장된 결과 ID)
+저장된 결과를 화면에 더 잘 보여주도록 변경
+
+
+✅ `product_detail.html`
+역할: 화면 구조
+변화 거의 없음 (JS가 대부분 담당)
+
+
+✅ `style.css`
+역할: UI 스타일
+
+변경 이유
+AI 분석 → 비슷한 후기 보기
+사용자 친화 UI로 변경
+
 ---
 `backend/apps/ai_gateway/models.py` : `[추가]` AI 추론 결과 저장 모델
 ```python
-# backend/apps/ai_gateway/models.py
 # [추가] AI 추론 결과를 DRF DB에 저장하기 위한 모델 파일
 
 from django.conf import settings
@@ -57,28 +104,28 @@ class ReviewSimilarityResult(models.Model):
     유사도 결과를 저장하는 모델
     """
 
-    # [추가] 어떤 상품 안에서 비교했는지 저장
+    # 어떤 상품 안에서 비교했는지 저장
     product = models.ForeignKey(
         "products.Product",
         on_delete=models.CASCADE,
         related_name="ai_similarity_results",
     )
 
-    # [추가] 기준이 되는 리뷰
+    # 기준이 되는 리뷰
     source_review = models.ForeignKey(
         "reviews.Review",
         on_delete=models.CASCADE,
         related_name="source_similarity_results",
     )
 
-    # [추가] 비교 대상 리뷰
+    # 비교 대상 리뷰
     compared_review = models.ForeignKey(
         "reviews.Review",
         on_delete=models.CASCADE,
         related_name="compared_similarity_results",
     )
 
-    # [추가] 버튼을 누른 사용자 (비로그인 사용자일 수 있으므로 null 허용)
+    # 버튼을 누른 사용자 (비로그인 사용자일 수 있으므로 null 허용)
     requested_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,
@@ -87,36 +134,36 @@ class ReviewSimilarityResult(models.Model):
         related_name="requested_similarity_results",
     )
 
-    # [추가] FastAPI 모델 이름 저장
+    # FastAPI 모델 이름 저장
     model_name = models.CharField(
         max_length=100,
         default="upskyy/e5-small-korean",
     )
 
-    # [추가] 유사도 점수
+    # 유사도 점수
     similarity_score = models.FloatField()
 
-    # [추가] 프론트에서 쓰는 해석 문구도 같이 저장
+    # 프론트에서 쓰는 해석 문구도 같이 저장
     similarity_label = models.CharField(max_length=30)
 
-    # [추가] 기준 점수(threshold) 저장
+    # 기준 점수(threshold) 저장
     similarity_threshold = models.FloatField(default=0.45)
 
-    # [추가] 당시의 텍스트 스냅샷 저장
+    # 당시의 텍스트 스냅샷 저장
     source_review_snapshot = models.TextField()
     compared_review_snapshot = models.TextField()
 
-    # [추가] 비교 리뷰 작성자명을 스냅샷으로 저장
+    # 비교 리뷰 작성자명을 스냅샷으로 저장
     compared_username_snapshot = models.CharField(max_length=150, blank=True)
 
-    # [추가] 추론 시각
+    # 추론 시각
     analyzed_at = models.DateTimeField(auto_now=True)
 
-    # [추가] 최초 생성 시각
+    # 최초 생성 시각
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
-        # [추가] 같은 기준 리뷰 + 비교 리뷰 + 모델 이름 조합은 1개만 유지
+        # 같은 기준 리뷰 + 비교 리뷰 + 모델 이름 조합은 1개만 유지
         constraints = [
             models.UniqueConstraint(
                 fields=["source_review", "compared_review", "model_name"],
@@ -125,6 +172,7 @@ class ReviewSimilarityResult(models.Model):
         ]
         ordering = ["-similarity_score", "-analyzed_at"]
 
+	# 관리/디버깅용 표시
     def __str__(self):
         return (
             f"[{self.model_name}] "
@@ -134,10 +182,16 @@ class ReviewSimilarityResult(models.Model):
         )
 ```
 
+이부분이 영향을 주는곳
+`def __str__(self):`
+- Django Admin 화면 : 한 눈에 보이게 해주는 역할입니다
+- `Django shell / print()` : 디버깅할 때 매우 중요합니다
+- 로그 출력 : 로그에 찍히는 값도 이 문자열로 나옵니다
+
+---
 `backend/apps/ai_gateway/admin.py` : `[추가]` 관리자 페이지에서 저장 결과 확인
 ```python
-# backend/apps/ai_gateway/admin.py
-# [추가] AI 추론 결과를 Django admin에서 확인하기 위한 파일
+# AI 추론 결과를 Django admin에서 확인하기 위한 파일
 
 from django.contrib import admin
 from .models import ReviewSimilarityResult
@@ -145,7 +199,7 @@ from .models import ReviewSimilarityResult
 
 @admin.register(ReviewSimilarityResult)
 class ReviewSimilarityResultAdmin(admin.ModelAdmin):
-    # [추가] 목록에서 주요 필드 확인
+    # 목록에서 주요 필드 확인
     list_display = (
         "id",
         "product",
@@ -157,7 +211,7 @@ class ReviewSimilarityResultAdmin(admin.ModelAdmin):
         "analyzed_at",
     )
 
-    # [추가] 검색 기능
+    # 검색 기능
     search_fields = (
         "product__name",
         "source_review__content",
@@ -166,21 +220,51 @@ class ReviewSimilarityResultAdmin(admin.ModelAdmin):
         "model_name",
     )
 
-    # [추가] 필터
+    # 필터
     list_filter = (
         "model_name",
         "similarity_label",
         "analyzed_at",
     )
 
-    # [추가] 정렬
+    # 정렬
     ordering = ("-analyzed_at",)
 ```
+---
+```
+[설명]
+이 코드는 특정 리뷰를 기준으로 같은 상품의 다른 리뷰들과
+AI 유사도 분석을 수행하고, 그 결과를 DB에 저장한 뒤 프론트에 반환하는 API입니다.
 
+[전체 흐름]
+1. 사용자가 "비슷한 후기 보기" 버튼 클릭
+2. JS → Django API (/ai/reviews/<review_id>/analyze/) 호출
+3. Django(View)가 기준 리뷰 + 비교 리뷰 목록 조회
+4. FastAPI에 요청하여 유사도 계산 수행
+5. 결과를 DB(ReviewSimilarityResult)에 저장
+6. 상위 유사 리뷰만 정렬하여 프론트에 반환
+7. 프론트에서 사용자 친화적으로 화면 출력
+
+[핵심 역할]
+- FastAPI: 유사도 계산만 담당 (AI 서버)
+- Django(View): 데이터 조회 + 결과 저장 + 응답 반환 (서비스 서버)
+
+[기존 코드 대비 변경점]
+1. 단순 결과 반환 → DB 저장 기능 추가
+2. 유사도 기준값(threshold) 적용 (낮은 점수 필터링)
+3. 분석 결과에 label(비슷/매우비슷) 추가
+4. 저장된 결과 id(analysis_id)도 함께 반환
+5. 모델 이름(model_name) 관리
+
+[이 코드의 목적]
+- AI 결과를 단순 계산이 아니라 "서비스 데이터"로 관리하기 위함
+- 어떤 리뷰를 언제 어떻게 분석했는지 추적 가능하게 만들기 위함
+- 이후 추천, 통계, 캐싱 등에 활용하기 위한 기반 구축
+```
+
+이 코드는 리뷰 유사도 분석 + DB 저장 + 프론트 반환을 한 번에 처리하는 핵심 API입니다.
 `backend/apps/ai_gateway/views.py` : `[수정]` FastAPI 결과를 받아서 DB에 저장하도록 변경
 ```python
-# backend/apps/ai_gateway/views.py
-
 # [유지] 필요한 import
 from requests import RequestException
 
@@ -345,10 +429,9 @@ class ReviewAnalyzeAPIView(APIView):
         )
 ```
 
-`backend/apps/ai_gateway/urls.py` : `[수정]` 기존 분석 URL 유지
+---
+`backend/apps/ai_gateway/urls.py` : 기존 분석 URL `[유지]`
 ```python
-# backend/apps/ai_gateway/urls.py
-
 from django.urls import path
 from .views import (
     EmbeddingAPIView,     # [유지] 기존 사용 중이면 유지
@@ -361,16 +444,52 @@ urlpatterns = [
     path("reviews/<int:review_id>/analyze/", ReviewAnalyzeAPIView.as_view(), name="ai-review-analyze"),
 ]
 ```
+---
+```
+[전체 역할]
+이 코드는 상품 상세 페이지에서 리뷰 목록을 불러오고,
+각 리뷰마다 비슷한 후기 보기 기능을 연결하는 프론트엔드 JS 코드입니다.
+
+사용자가 버튼을 누르면 Django의 AI 분석 API를 호출하고,
+반환된 유사 리뷰 결과를 화면에 사용자 친화적인 형태로 출력합니다.
+
+[기존 코드 대비 변경 목적]
+처음 코드는 AI 분석이라는 개발자 중심 표현과 점수 중심 화면이었다면,
+변경 후 코드는 "비슷한 후기 보기"라는 사용자 중심 표현과
+이해하기 쉬운 문구 중심 UI로 바뀌었습니다.
+
+즉, 이번 변경은 단순 기능 추가가 아니라
+AI 분석 결과를 실제 사용자 화면에서 더 자연스럽게 보여주기 위한 UI 개선입니다.
+
+[핵심 변경점]
+1. 버튼 문구 변경
+   - AI 분석 → 비슷한 후기 보기
+
+2. 안내 문구 추가
+   - 리뷰 목록 상단에 기능 설명 추가
+
+3. 결과 출력 방식 변경
+   - 점수 숫자 중심 → 해석 문구 중심
+
+4. 결과 없을 때 안내 개선
+   - 단순 실패 문구 → 이유를 설명하는 문구로 변경
+
+5. DB 저장 결과 반영
+   - analysis_id, label 등을 화면에서 사용할 수 있게 확장
+```
 
 `backend/static/js/product-detail.js` : `[수정]` 저장된 결과 id, label도 활용 가능하게 정리
-```python
+```js
 document.addEventListener("DOMContentLoaded", function () {
+    // [유지] 상품 상세 영역 DOM
     const productDetailBox = document.getElementById("productDetailBox");
     const productId = window.PRODUCT_ID;
 
+    // [유지] 수정 / 삭제 버튼 DOM
     const editBtn = document.getElementById("editBtn");
     const deleteBtn = document.getElementById("deleteProductBtn");
 
+    // [유지] 리뷰 작성 관련 DOM
     const reviewForm = document.getElementById("reviewCreateForm");
     const contentInput = document.getElementById("content");
     const ratingInput = document.getElementById("rating");
@@ -378,8 +497,10 @@ document.addEventListener("DOMContentLoaded", function () {
     const previewBox = document.getElementById("previewBox");
     const reviewList = document.getElementById("reviewList");
 
+    // [유지] axios 또는 공통 api 인스턴스 사용
     const api = window.api || axios;
 
+    // [유지] 로그인 토큰을 헤더에 붙이는 공통 함수
     function getAuthHeaders(extraHeaders = {}) {
         const token =
             localStorage.getItem("access") ||
@@ -395,6 +516,7 @@ document.addEventListener("DOMContentLoaded", function () {
         return headers;
     }
 
+    // [유지] 상품 상세 조회 후 화면 출력
     async function loadProductDetail() {
         try {
             const response = await api.get(`/products/api/${productId}/`);
@@ -413,6 +535,7 @@ document.addEventListener("DOMContentLoaded", function () {
         }
     }
 
+    // [유지 + 일부 수정] 리뷰 목록 조회 후 카드 생성
     async function loadReviews() {
         try {
             const response = await api.get(`/reviews/?product=${productId}`);
@@ -426,9 +549,9 @@ document.addEventListener("DOMContentLoaded", function () {
                 return;
             }
 
-            // ============================
-            // [유지] 리뷰 목록 상단 안내 문구
-            // ============================
+            // [추가]
+            // 처음 코드에는 없었음
+            // 리뷰 목록 상단에 이 기능이 무엇인지 안내 문구를 보여줌
             const guideBox = document.createElement("div");
             guideBox.className = "review-guide-box";
             guideBox.innerHTML = `
@@ -442,6 +565,7 @@ document.addEventListener("DOMContentLoaded", function () {
             reviews.forEach((review) => {
                 let imagesHtml = "";
 
+                // [유지] 리뷰 이미지가 있으면 렌더링
                 if (review.images && review.images.length > 0) {
                     imagesHtml = `
                         <div style="margin-top: 12px; display:flex; flex-wrap:wrap; gap:10px;">
@@ -472,7 +596,9 @@ document.addEventListener("DOMContentLoaded", function () {
                         작성일: ${review.created_at || "-"}
                     </p>
 
-                    <!-- [수정] 버튼 문구 변경 -->
+                    <!-- [수정]
+                         처음 코드: 버튼 문구가 "AI 분석"
+                         변경 후: 버튼 문구를 "비슷한 후기 보기" 로 변경 -->
                     <button
                         class="ai-analyze-btn"
                         data-review-id="${review.id}"
@@ -481,7 +607,7 @@ document.addEventListener("DOMContentLoaded", function () {
                         비슷한 후기 보기
                     </button>
 
-                    <!-- [유지] AI 결과 출력 영역 -->
+                    <!-- [유지] 결과 출력 영역 -->
                     <div
                         class="ai-result-box"
                         id="ai-result-${review.id}"
@@ -492,6 +618,7 @@ document.addEventListener("DOMContentLoaded", function () {
                 reviewList.appendChild(card);
             });
 
+            // [유지] 버튼 이벤트 연결
             bindAnalyzeButtons();
 
         } catch (error) {
@@ -500,9 +627,7 @@ document.addEventListener("DOMContentLoaded", function () {
         }
     }
 
-    // ============================
-    // [유지] 점수를 사용자 친화 문구로 변환
-    // ============================
+    // [유지] 점수를 짧은 라벨로 변환
     function getSimilarityLabel(score) {
         if (score > 0.7) return "매우 비슷";
         if (score > 0.5) return "비슷";
@@ -510,9 +635,8 @@ document.addEventListener("DOMContentLoaded", function () {
         return "관련 있음";
     }
 
-    // ============================
-    // [유지] 점수별 설명 문구
-    // ============================
+    // [유지였던 추가 함수]
+    // 처음 코드에서는 없었고, 중간 변경 단계에서 추가된 설명용 함수
     function getSimilarityDescription(score) {
         if (score > 0.7) return "표현과 느낌이 매우 비슷한 후기예요.";
         if (score > 0.5) return "비슷한 의견을 담고 있는 후기예요.";
@@ -520,6 +644,7 @@ document.addEventListener("DOMContentLoaded", function () {
         return "참고용으로 볼 수 있는 후기예요.";
     }
 
+    // [유지 + 결과 출력 부분 수정]
     function bindAnalyzeButtons() {
         const buttons = document.querySelectorAll(".ai-analyze-btn");
 
@@ -529,15 +654,32 @@ document.addEventListener("DOMContentLoaded", function () {
                 const resultBox = document.getElementById(`ai-result-${reviewId}`);
 
                 button.disabled = true;
+
+                // [수정]
+                // 처음 코드: "분석 중..."
+                // 변경 후: "후기 찾는 중..."
                 button.textContent = "후기 찾는 중...";
 
                 resultBox.style.display = "block";
+
+                // [수정]
+                // 처음 코드: "AI 분석 중입니다..."
+                // 변경 후: "비슷한 후기를 찾는 중입니다..."
                 resultBox.innerHTML = "<p>비슷한 후기를 찾는 중입니다...</p>";
 
                 try {
+                    // [유지] Django AI 분석 API 호출
                     const response = await api.get(`/ai/reviews/${reviewId}/analyze/`);
                     const data = response.data;
 
+                    // [수정]
+                    // 처음 코드:
+                    // - "AI 분석 결과"
+                    // - "비슷한 리뷰를 찾지 못했습니다."
+                    //
+                    // 변경 후:
+                    // - 제목 문구 변경
+                    // - 부족한 이유 설명 추가
                     if (!data.similar_reviews || data.similar_reviews.length === 0) {
                         resultBox.innerHTML = `
                             <div class="ai-result-inner">
@@ -551,8 +693,22 @@ document.addEventListener("DOMContentLoaded", function () {
                         return;
                     }
 
+                    // [추가]
+                    // 처음 코드에는 없었음
+                    // 몇 개를 찾았는지 사용자에게 자연스럽게 안내
                     const countText = `비슷한 후기 ${data.similar_reviews.length}개를 찾았어요.`;
 
+                    // [수정]
+                    // 처음 코드:
+                    // - AI 분석 결과
+                    // - TOP n
+                    // - username / label / 숫자 중심
+                    //
+                    // 변경 후:
+                    // - 사용자 중심 제목
+                    // - 설명 문구 추가
+                    // - 숫자보다 의미 문구를 먼저 노출
+                    // - analysis_id 표시 추가
                     resultBox.innerHTML = `
                         <div class="ai-result-inner">
                             <p><strong>이 리뷰와 비슷한 다른 후기</strong></p>
@@ -565,23 +721,40 @@ document.addEventListener("DOMContentLoaded", function () {
                                 ${data.similar_reviews.map((item) => `
                                     <li class="ai-similar-review-item" style="margin-bottom:14px;">
                                         <p>
+                                            <!-- [수정]
+                                                 처음 코드: getSimilarityLabel(item.score)만 사용
+                                                 변경 후: 백엔드에서 내려준 label이 있으면 우선 사용 -->
                                             <strong>${item.label || getSimilarityLabel(item.score)}</strong>
                                             : ${item.content}
                                         </p>
+
+                                        <!-- [유지] 작성자 표시 -->
                                         <p><small>작성자: ${item.username}</small></p>
+
+                                        <!-- [유지] 설명 문구 표시 -->
                                         <p><small>${getSimilarityDescription(item.score)}</small></p>
+
+                                        <!-- [유지] 점수/작성일 표시 -->
                                         <p><small>유사도 ${item.score.toFixed(2)} / 작성일 ${item.created_at}</small></p>
+
+                                        <!-- [추가]
+                                             처음 코드에는 없었음
+                                             DB에 저장된 AI 결과 id를 보여줌 -->
                                         <p><small>AI 결과 ID: ${item.analysis_id}</small></p>
                                     </li>
                                 `).join("")}
                             </ul>
 
+                            <!-- [유지] 안내 문구 -->
                             <p class="ai-sub-guide">
                                 아직 리뷰 수가 적어 결과가 제한적일 수 있어요.
                             </p>
                         </div>
                     `;
                 } catch (error) {
+                    // [수정]
+                    // 처음 코드: "AI 분석 실패"
+                    // 변경 후: "비슷한 후기 조회 실패"
                     console.error("비슷한 후기 조회 실패:", error.response?.data || error);
 
                     const detail =
@@ -594,12 +767,17 @@ document.addEventListener("DOMContentLoaded", function () {
                     `;
                 } finally {
                     button.disabled = false;
+
+                    // [수정]
+                    // 처음 코드: "AI 분석"
+                    // 변경 후: "비슷한 후기 보기"
                     button.textContent = "비슷한 후기 보기";
                 }
             });
         });
     }
 
+    // [유지] 이미지 미리보기
     if (imageInput && previewBox) {
         imageInput.addEventListener("change", function () {
             previewBox.innerHTML = "";
@@ -627,6 +805,7 @@ document.addEventListener("DOMContentLoaded", function () {
         });
     }
 
+    // [유지] 리뷰 작성 기능
     if (reviewForm) {
         reviewForm.addEventListener("submit", async function (e) {
             e.preventDefault();
@@ -678,12 +857,14 @@ document.addEventListener("DOMContentLoaded", function () {
         });
     }
 
+    // [유지] 상품 수정 이동
     if (editBtn) {
         editBtn.addEventListener("click", function () {
             window.location.href = `/products/${productId}/update/`;
         });
     }
 
+    // [유지] 상품 삭제
     if (deleteBtn) {
         deleteBtn.addEventListener("click", async function () {
             const confirmDelete = confirm("정말 이 상품을 삭제하시겠습니까?");
@@ -709,6 +890,7 @@ document.addEventListener("DOMContentLoaded", function () {
         });
     }
 
+    // [유지] 페이지 시작 시 실행
     loadProductDetail();
     loadReviews();
 });
