@@ -85,14 +85,15 @@ socket.onmessage = function (event) {
 3. backend/static/js/product-detail.js: 기존 폴링(Polling) 대신 웹소켓 연결 로직으로 교체
 4. ai-server/requirements.txt: 비동기 Redis 라이브러리 추가 (`redis` 패키지)
 
-설치패키지
+requirements.txt : 만약 현재 ai-server에 redis가 없다면
 ```bash
-uv pip install redis
+redis
 ```
+직접 추가 
 
-`requirements.txt` 갱신
-```
-uv pip freeze > requirements.txt
+그리고 Docker 재빌드
+```bash
+dc up -d --build
 ```
 
 `ai-server/main.py`

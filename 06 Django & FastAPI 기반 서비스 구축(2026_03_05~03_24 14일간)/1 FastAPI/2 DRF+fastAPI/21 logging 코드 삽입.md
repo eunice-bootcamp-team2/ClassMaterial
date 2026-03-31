@@ -1,35 +1,83 @@
-핵심 목표
-- 흐름 추적 (START / LOOP / SAVE / FINISH)
-- 에러 추적
-- Celery task_id 기반 로그 식별
+### 로그 삽입의 개요
+로그 삽입은 시스템 내부에서 발생하는 작업 흐름과 상태를 기록하여,  
+문제 발생 시 원인을 빠르게 파악하고 안정적인 서비스를 유지하기 위한 디버깅 기법입니다.
 
-Django / Celery
-- `logger.info()` : 작업 시작, 작업 완료
-- `logger.warning()` : 후보 리뷰 없음, 재시도 발생
-- `logger.error()` : 예외 발생
-    
-FastAPI
-- `logger.info()` : WebSocket 연결, Redis 메시지 수신
-- `logger.error()` : 연결 실패, JSON 파싱 실패
-    
-Redis
-- Redis 자체 로그는 Docker 로그로 확인
+특히 Django, Celery, FastAPI, Redis와 같이 여러 구성 요소가 연동되는 구조에서는  
+각 단계에서의 동작을 명확히 확인할 수 있도록 로그를 남기는 것이 매우 중요합니다.
 
-전체 구조 기준
-```
-[Django] → Celery → Redis → FastAPI(WebSocket) → 브라우저
-```
-로그는 이 3군데만 넣으면 됩니다
-1. Celery (tasks.py)
-2. FastAPI (main.py)
-3. Redis (❌ 코드에 안 넣음, 로그 방식 다름)
+### 로그를 사용하는 주요 목적
 
-Redis 로그 확인 방법
+1️⃣ 작업 흐름 추적
+각 작업이 어디에서 시작되고, 어떤 과정을 거쳐, 어디에서 종료되는지를 확인할 수 있습니다.  
+이를 통해 전체 시스템의 실행 흐름을 명확하게 이해할 수 있습니다.
+
+예:
+- START → 데이터 조회 → 처리 → 저장 → FINISH
+
+---
+2️⃣ 에러 원인 파악
+예외가 발생했을 때 로그를 통해 오류 위치와 원인을 빠르게 확인할 수 있습니다.  
+특히 `logger.error()` 또는 `logger.exception()`을 활용하면 stack trace까지 확인 가능합니다.
+
+---
+3️⃣ 비동기 작업 추적 (Celery)
+Celery와 같은 비동기 처리 환경에서는 작업이 어디서 실행되는지 눈으로 보이지 않기 때문에,  
+`task_id` 기반 로그를 통해 특정 작업을 식별하고 추적할 수 있습니다.
+
+---
+4️⃣ 시스템 연동 상태 확인
+다음과 같은 서비스 간 연결이 정상적으로 이루어지는지 확인할 수 있습니다.
+- Django → Celery
+- Celery → Redis
+- Redis → FastAPI (WebSocket)
+- FastAPI → 브라우저
+
+각 단계마다 로그를 남김으로써 어느 지점에서 문제가 발생했는지 정확히 알 수 있습니다.
+
+---
+📌 로그를 넣어야 하는 핵심 위치
+효율적인 디버깅을 위해 모든 곳에 로그를 넣는 것이 아니라,  
+다음 핵심 지점에만 로그를 삽입하는 것이 중요합니다.
+1. Celery (tasks.py) → 작업 실행 흐름
+2. FastAPI (main.py) → WebSocket 및 메시지 처리
+3. Redis → Docker 로그로 확인 (코드 삽입 불필요)
+
+한줄로 핵심정리를 하면
+로그는 문제 발생 후 확인하는 도구가 아니라  
+시스템의 흐름을 눈으로 볼 수 있게 만드는 관찰 장치입니다.
+
+---
+### 핵심 목표
+- 흐름 확인 → START → 처리 → 저장 → 끝
+- 에러 확인 → 어디서 터졌는지
+- task_id → 어떤 작업인지 구분
+
+### 어디에 로그 넣는지
+1️⃣ Celery (tasks.py)
+- 작업 전체 흐름 확인
+	- 시작 / 반복 / 저장 / 완료
+
+2️⃣ FastAPI (main.py)
+- 실시간 통신 확인
+	- WebSocket 연결
+	- Redis 메시지 받는지
+ 
+3️⃣ Redis
+- 코드에 안 넣음
+	- Docker 로그로 확인
 ```bash
 docker compose logs -f redis
 ```
 
+전체 흐름 (이걸 보는게 핵심)
+```
+Django → Celery → Redis → FastAPI → 브라우저
+```
+로그는 어디서 멈췄는지 찾는 지도 입니다
+
 ---
+### 로그 삽입하기
+
 `backend/apps/ai_gateway/tasks.py`
 ```python
 from celery import shared_task
@@ -392,20 +440,43 @@ FastAPI + WebSocket + Celery 연동이 제대로 되는지 확인하는 핵심 �
 |AI 모델 호출|정상|
 |응답 처리|정상|
 
-# 💡 개선 포인트 (있다면)
-
-## 1️⃣ HF Token 추가 (선택)
-
-HF_TOKEN=xxx
-
-👉 속도 개선
-
 ---
+### 로그 구조 개선 (선택)
+그를 사람이 보기 쉽게 바꾸는 것입니다.
 
-## 2️⃣ 로그 구조 개선 (선택)
+FastAPI(Uvicorn)가 자동으로 찍어주는 로그
+```
+INFO: 127.0.0.1: WebSocket 연결됨
+```
+문제
+- 어떤 기능인지 모름
+- Celery 작업인지 구분 안됨
+- task_id 없음 → 추적 불가
 
-👉 지금은 uvicorn 기본 로그
+개선된 로그 (직접 작성)
+```python
+logger.info("[WS CONNECT] task_id=123")
+```
+의미
+- WS CONNECT → 웹소켓 연결 이벤트구나
+- task_id=123 → 이 작업에 대한 로그구나
 
-👉 나중에:
+지금 구조는
+```
+Django → Celery → Redis → FastAPI → 브라우저
+```
+여러 개가 동시에 돌아갑니다. 그래서 본 로그만 보면 이게 어떤 요청인지 모름니다.
 
-logger.info("[WS CONNECT]")
+그러나 개선하면 이렇게 됩니다
+```
+[WS CONNECT] task_id=123  
+[REDIS RECEIVE] task_id=123  
+[WS SEND] task_id=123
+```
+한 줄씩 보면 흐름이 보임
+
+| 구분    | 설명                 |
+| ----- | ------------------ |
+| 기본 로그 | 그냥 연결됨, 요청됨        |
+| 개선 로그 | 무슨 작업 + 어떤 상태까지 표시 |
+로그 구조 개선 = 로그에 의미를 붙여서 흐름을 보이게 만드는 것
