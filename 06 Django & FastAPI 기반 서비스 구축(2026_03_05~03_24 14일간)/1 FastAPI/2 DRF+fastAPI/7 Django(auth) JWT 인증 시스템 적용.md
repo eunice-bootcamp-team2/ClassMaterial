@@ -1,5 +1,3 @@
-
-
 로그인/회원가입 엔드포인트는 `accounts`가 중심이 맞지만, 인증을 사용하는 모든 API와 프론트 요청 방식까지 함께 연결됩니다.
 
 JWT 적용의 중심은 accounts 앱입니다.
@@ -218,7 +216,10 @@ class UserViewSet(ViewSet):
     필요하면 나중에 관리자 권한으로 제한 가능
     """
 
-    permission_classes = [permissions.AllowAny]
+    permission_classes = [permissions.AllowAny] # 권한 클래스들을 리스트로 지정
+    # permissions.AllowAny  누구나 접근 가능 (로그인 필요 없음)
+	# permissions.IsAuthenticated  로그인한 사용자만 접근 가능 (JWT 필요)
+	# permissions.IsAdminUser 관리자만 접근 가능 (is_staff=True)
 
     def list(self, request):
         users = User.objects.all()

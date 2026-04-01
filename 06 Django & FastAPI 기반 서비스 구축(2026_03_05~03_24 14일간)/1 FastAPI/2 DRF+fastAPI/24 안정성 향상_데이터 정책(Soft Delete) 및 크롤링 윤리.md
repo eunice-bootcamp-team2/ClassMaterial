@@ -116,6 +116,98 @@ apps/
 ```
 
 ---
+데이터를 진짜로 지우지 않고, 숨겨서 관리하는 시스템으로 활용할 models.py
+기존 방식 (문제)
+```
+삭제 버튼 → DB에서 완전히 삭제
+```
+문제점:
+- ❌ 실수로 삭제하면 복구 불가
+- ❌ 연관 데이터(CASCADE)까지 전부 날아감
+- ❌ AI 분석, 통계 데이터도 같이 사라짐
+그래서 나온 개념이 Soft Delete (논리 삭제)입니다
+
+✅ 이 코드가 하는 일
+
+1️⃣ delete()를 바꿔버림
+```python
+def delete(self):
+```
+원래:
+```sql
+DELETE FROM review;
+```
+지금:
+```sql
+UPDATE review SET is_deleted=True;
+```
+✔ DB에서 안 지움  
+✔ 상태만 변경
+
+2️⃣ 기본 조회에서 자동으로 숨김
+```python
+objects = SoftDeleteManager()
+```
+
+이 매니저가 하는 일:
+```sql
+SELECT * FROM review WHERE is_deleted=False;
+```
+✔ 삭제된 데이터는 자동으로 안 보임
+
+3️⃣ 필요하면 전체 조회 가능
+```python
+all_objects = AllObjectsManager()
+```
+이건 관리자용
+```sql
+SELECT * FROM review;
+```
+✔ 삭제된 것도 포함해서 조회
+
+4️⃣ 복구 기능 있음
+```python
+is_deleted=False 로 되돌림
+```
+✔ 삭제 취소 가능
+
+5️⃣ 진짜 삭제도 가능
+```python
+def hard_delete(self):
+```
+이건 진짜 DB에서 삭제 
+✔ 관리자용 위험 기능
+
+아래 코드의 전체 흐름
+```
+사용자 삭제 버튼 클릭
+        ↓
+Review.delete()
+        ↓
+is_deleted=True 저장 (DB는 안 지움)
+        ↓
+일반 조회 → 안 보임
+관리자 조회 → 보임
+        ↓
+복구 가능 (restore)
+```
+
+아래 수정된 코드의 기능
+
+1️⃣ AI 데이터 보호
+- 리뷰 삭제돼도
+- 임베딩 / 유사도 / 감정 분석 유지 가능
+
+2️⃣ 사용자 실수 방지
+- 잘못 삭제해도 복구 가능
+
+3️⃣ 통계/추천 유지
+- 삭제된 리뷰도 분석에 활용 가능
+
+4️⃣ CASCADE 사고 방지
+- 리뷰 삭제 → 이미지/AI 결과 다 날아가는 문제 해결
+
+---
 `backend/apps/core/models.py` 새파일 추가
 ```python
 from django.db import models
@@ -220,77 +312,130 @@ from django.db import models
 from django.conf import settings
 
 from apps.products.models import Product
-from apps.core.models import SoftDeleteModel
+from apps.core.models import SoftDeleteModel   
+# [추가] 공통 Soft Delete 추상 모델 import
 
 
 User = settings.AUTH_USER_MODEL
 
 
-class Review(SoftDeleteModel):
+class Review(SoftDeleteModel):  # [수정] models.Model → SoftDeleteModel 상속으로 변경
     """
-    제품 리뷰
-    - Soft Delete 적용
+    제품 리뷰 모델
+    - 리뷰 본문, 평점, 공개 여부 저장
+    - Soft Delete 적용 대상
     """
 
     user = models.ForeignKey(
         User,
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
+        on_delete=models.SET_NULL,   # [수정] 사용자 삭제 시 리뷰까지 지우지 않고 user만 null 처리
+        null=True,                   # [추가] SET_NULL 사용을 위해 필요
+        blank=True,                  # [추가] 관리자/폼에서 비워둘 수 있게 허용
         related_name="reviews",
     )
+
     product = models.ForeignKey(
         Product,
-        on_delete=models.PROTECT,
+        on_delete=models.PROTECT,    # [수정] 상품 삭제 시 리뷰가 있으면 삭제 막음
         related_name="reviews",
     )
-    content = models.TextField()
-    rating = models.IntegerField()
-    is_public = models.BooleanField(default=True)
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
+
+    content = models.TextField()     # 리뷰 내용
+    rating = models.IntegerField()   # 평점
+    is_public = models.BooleanField(default=True)   # 공개 여부
+    created_at = models.DateTimeField(auto_now_add=True)  # 생성 시각
+    updated_at = models.DateTimeField(auto_now=True)      # 수정 시각
 
     class Meta:
-        ordering = ["-created_at"]
+        ordering = ["-created_at"]   # 최신 리뷰가 먼저 보이도록 정렬
 
     def __str__(self):
+        # user가 삭제되어 null일 수도 있으므로 안전하게 처리
         username = self.user.username if self.user else "탈퇴한 사용자"
         return f"{self.product} - {username}"
 
 
 class ReviewImage(models.Model):
+    """
+    리뷰 이미지 모델
+    - 리뷰 1개에 여러 이미지가 연결될 수 있음
+    """
+
     review = models.ForeignKey(
         Review,
-        on_delete=models.CASCADE,
+        on_delete=models.CASCADE, # 리뷰가 완전 삭제(hard delete)되면 이미지도 함께 삭제
         related_name="images",
     )
-    image = models.ImageField(upload_to="reviews/")
-    created_at = models.DateTimeField(auto_now_add=True)
+    image = models.ImageField(upload_to="reviews/")   # 업로드 이미지 파일
+    created_at = models.DateTimeField(auto_now_add=True)  # 업로드 시각
 
     def __str__(self):
         return f"ReviewImage(review_id={self.review_id})"
 
 
 class ReviewAI(models.Model):
+    """
+    리뷰 AI 분석 결과 모델
+    - 리뷰 1개당 AI 결과 1개 저장
+    """
+
     review = models.OneToOneField(
         Review,
-        on_delete=models.CASCADE,
+        on_delete=models.CASCADE,# 리뷰가 완전 삭제(hard delete)되면 AI 결과도 함께 삭제
         related_name="ai_result",
     )
-    sentiment = models.CharField(max_length=50)
-    confidence = models.FloatField()
-    keywords = models.JSONField(blank=True, null=True)
-    created_at = models.DateTimeField(auto_now_add=True)
+    sentiment = models.CharField(max_length=50)   # 감정 분석 결과
+    confidence = models.FloatField()              # 예측 신뢰도
+    keywords = models.JSONField(blank=True, null=True)  # 핵심 키워드 목록
+    created_at = models.DateTimeField(auto_now_add=True)  # 분석 생성 시각
 
     def __str__(self):
         return f"ReviewAI(review_id={self.review_id})"
 ```
 
-왜 이렇게 바꾸는가의 핵심은 2개입니다.
-- `Review`가 `SoftDeleteModel`을 상속
-- `user`는 `SET_NULL`, `product`는 `PROTECT`
+수정된 핵심
+1. `Review` 상속 변경
+```python
+class Review(SoftDeleteModel)
+```
+- `[수정]`
+- 이제 리뷰는 물리 삭제가 아니라 논리 삭제 가능
 
-이렇게 해야 사용자 탈퇴 시 리뷰 본문은 남기고, 상품은 리뷰가 연결돼 있으면 실수로 지워지지 않습니다.
+---
+2. `SoftDeleteModel import`
+```python
+from apps.core.models import SoftDeleteModel
+```
+- `[추가]`
+- 공통 soft delete 기능 사용
+
+---
+3. `user` 외래키 변경
+```python
+on_delete=models.SET_NULL  
+null=True  
+blank=True
+```
+- `[수정 + 추가]`
+- 사용자가 탈퇴해도 리뷰 내용은 남김
+- user만 `None` 처리
+
+---
+4. `product` 외래키 변경
+```python
+on_delete=models.PROTECT
+```
+- `[수정]`
+- 리뷰가 달린 상품은 실수로 삭제되지 않게 막음
+
+---
+각 모델 역할 한 줄 요약
+- `Review`  
+    → 리뷰 본문/평점 저장 + soft delete 적용 대상
+- `ReviewImage`  
+    → 리뷰에 연결된 이미지 저장
+- `ReviewAI`  
+    → 리뷰에 대한 AI 분석 결과 저장
 
 ---
 `backend/apps/reviews/serializers.py`
@@ -301,57 +446,83 @@ from .models import Review, ReviewImage
 
 
 class ReviewImageSerializer(serializers.ModelSerializer):
+    # [유지]
+    # 업로드된 이미지의 실제 접근 URL을 응답에 추가하기 위한 가상 필드
     image_url = serializers.SerializerMethodField()
 
     class Meta:
         model = ReviewImage
         fields = [
-            "id",
-            "image",
-            "image_url",
-            "created_at",
+            "id",          # 이미지 ID
+            "image",       # 원본 이미지 파일 경로
+            "image_url",   # [유지] 브라우저에서 바로 접근 가능한 전체 URL
+            "created_at",  # 생성 시각
         ]
 
     def get_image_url(self, obj):
+        # [유지]
+        # serializer context에서 request를 꺼내 절대경로 URL 생성에 사용
         request = self.context.get("request")
 
+        # [유지]
+        # 이미지가 없으면 None 반환
         if not obj.image:
             return None
 
         try:
+            # [유지]
+            # 저장된 이미지의 상대 URL 추출
             image_url = obj.image.url
         except Exception:
+            # [유지]
+            # 파일이 없거나 접근 불가하면 안전하게 None 반환
             return None
 
         if request:
+            # [유지]
+            # request가 있으면 절대 URL로 변환
+            # 예: http://127.0.0.1:8000/media/reviews/1.jpg
             return request.build_absolute_uri(image_url)
 
+        # [유지]
+        # request가 없으면 상대 경로 그대로 반환
         return image_url
 
 
 class ReviewAISerializer(serializers.Serializer):
     """
-    현재 프로젝트에서 model 필드명이 confidence일 수도 있고,
-    다른 단계 문서에서 score/summary가 있을 수도 있어서
-    최대한 안전하게 읽도록 작성
+    AI 분석 결과 응답용 serializer
+    - [수정] ModelSerializer가 아니라 Serializer 사용
+    - 이유: 현재 프로젝트 단계별로 AI 결과 필드명이 조금씩 다를 수 있어서
+      유연하게 읽기 위해 직접 선언형으로 작성
     """
 
-    sentiment = serializers.CharField(read_only=True)
-    confidence = serializers.FloatField(read_only=True, required=False)
-    score = serializers.FloatField(read_only=True, required=False)
-    summary = serializers.CharField(read_only=True, required=False)
+    sentiment = serializers.CharField(read_only=True)  # 감정 결과
+    confidence = serializers.FloatField(read_only=True, required=False)  # [추가] 신뢰도
+    score = serializers.FloatField(read_only=True, required=False)       # [추가] 다른 문서 호환용 점수
+    summary = serializers.CharField(read_only=True, required=False)      # [추가] 다른 문서 호환용 요약
     keywords = serializers.ListField(
         child=serializers.CharField(),
         read_only=True,
         required=False,
-    )
+    )  # [유지] 키워드 목록
 
 
 class ReviewSerializer(serializers.ModelSerializer):
+    # [추가]
+    # user.username을 바로 노출하기 위해 가공 필드 추가
     username = serializers.SerializerMethodField()
+
+    # [유지]
+    # 리뷰 1개에 연결된 이미지 여러 개를 중첩 응답으로 포함
     images = ReviewImageSerializer(many=True, read_only=True)
+
+    # [수정]
+    # AI 결과를 안전하게 꺼내기 위해 직접 메서드 필드 사용
     ai_result = serializers.SerializerMethodField()
 
+    # [추가]
+    # 좋아요/북마크 관련 확장 응답 필드
     likes_count = serializers.SerializerMethodField()
     bookmarks_count = serializers.SerializerMethodField()
     is_liked = serializers.SerializerMethodField()
@@ -360,66 +531,161 @@ class ReviewSerializer(serializers.ModelSerializer):
     class Meta:
         model = Review
         fields = [
-            "id",
-            "user",
-            "username",
-            "product",
-            "content",
-            "rating",
-            "is_public",
-            "created_at",
-            "updated_at",
-            "images",
-            "ai_result",
-            "likes_count",
-            "bookmarks_count",
-            "is_liked",
-            "is_bookmarked",
+            "id",                # 리뷰 ID
+            "user",              # 작성자 ID
+            "username",          # [추가] 작성자 이름
+            "product",           # 상품 ID
+            "content",           # 리뷰 본문
+            "rating",            # 평점
+            "is_public",         # 공개 여부
+            "created_at",        # 생성 시각
+            "updated_at",        # 수정 시각
+            "images",            # [유지] 연결된 이미지 목록
+            "ai_result",         # [수정] AI 분석 결과
+            "likes_count",       # [추가] 좋아요 개수
+            "bookmarks_count",   # [추가] 북마크 개수
+            "is_liked",          # [추가] 현재 사용자의 좋아요 여부
+            "is_bookmarked",     # [추가] 현재 사용자의 북마크 여부
         ]
         read_only_fields = [
             "id",
-            "user",
-            "username",
+            "user",              # [유지] 작성자는 서버에서 넣음
+            "username",          # [유지] 계산값
             "created_at",
             "updated_at",
-            "images",
-            "ai_result",
-            "likes_count",
-            "bookmarks_count",
-            "is_liked",
-            "is_bookmarked",
+            "images",            # [유지] 별도 업로드 API로 처리
+            "ai_result",         # [유지] AI 결과는 직접 입력하지 않음
+            "likes_count",       # [유지] 계산값
+            "bookmarks_count",   # [유지] 계산값
+            "is_liked",          # [유지] 계산값
+            "is_bookmarked",     # [유지] 계산값
         ]
 
     def get_username(self, obj):
+        # [수정]
+        # Soft Delete 구조에서 user가 null일 수 있으므로 안전 처리
         if obj.user:
             return obj.user.username
         return "탈퇴한 사용자"
 
     def get_ai_result(self, obj):
+        # [수정]
+        # 리뷰에 연결된 ai_result가 없으면 None 반환
         if not hasattr(obj, "ai_result"):
             return None
+
+        # [유지]
+        # AI 결과가 있으면 전용 serializer로 감싸서 응답
         return ReviewAISerializer(obj.ai_result).data
 
     def get_likes_count(self, obj):
+        # [추가]
+        # 현재 리뷰에 연결된 좋아요 총 개수 반환
         return obj.likes.count()
 
     def get_bookmarks_count(self, obj):
+        # [추가]
+        # 현재 리뷰에 연결된 북마크 총 개수 반환
         return obj.bookmarks.count()
 
     def get_is_liked(self, obj):
+        # [추가]
+        # 로그인한 현재 사용자가 이 리뷰에 좋아요를 눌렀는지 확인
         request = self.context.get("request")
+
         if not request or not request.user.is_authenticated:
             return False
+
         return obj.likes.filter(user=request.user).exists()
 
     def get_is_bookmarked(self, obj):
+        # [추가]
+        # 로그인한 현재 사용자가 이 리뷰를 북마크했는지 확인
         request = self.context.get("request")
+
         if not request or not request.user.is_authenticated:
             return False
+
         return obj.bookmarks.filter(user=request.user).exists()
 ```
-프로젝트의 인터랙션 확장 버전을 유지하면서 soft delete와 충돌 없게 정리한 코드입니다.
-삭제된 리뷰는 기본적으로 queryset에서 빠지므로 serializer는 크게 복잡하지 않다. 다만 `username`은 작성자가 null일 수 있으니 안전하게 처리해야 한다. 현재 리뷰 응답에는 좋아요/북마크 상태가 들어가도록 확장된 구조입니다.
+
+핵심 수정 포인트
+1. `username`
+```python
+username = serializers.SerializerMethodField()
+```
+- `[추가]`
+- 리뷰 작성자 이름을 바로 프론트에 보내기 위한 필드
+- `obj.user.username`을 꺼내서 응답함
+
+---
+2. `ai_result`
+```python
+ai_result = serializers.SerializerMethodField()
+```
+- `[수정]`
+- AI 결과가 없는 리뷰도 있을 수 있으므로 안전하게 처리
+- 없으면 `None`, 있으면 `ReviewAISerializer`로 변환
+
+---
+3. `ReviewAISerializer`
+```python
+class ReviewAISerializer(serializers.Serializer):
+```
+- `[수정]`
+- `ModelSerializer`가 아니라 일반 `Serializer`
+- 이유: 단계별 문서마다 `confidence`, `score`, `summary` 같은 필드 차이가 있어서 유연하게 대응하려는 목적
+
+---
+4. 좋아요/북마크 관련 필드
+```python
+likes_count  
+bookmarks_count  
+is_liked  
+is_bookmarked
+```
+- `[추가]`
+- 프론트엔드에서 바로 쓰기 좋게 계산값 포함
+- 목록/상세 화면에서 추가 요청 없이 상태 표시 가능
+
+---
+5. `get_username()`
+```python
+if obj.user:  
+    return obj.user.username  
+return "탈퇴한 사용자"
+```
+- `[수정]`
+- soft delete 구조와 `SET_NULL` 구조 때문에 user가 비어 있을 수 있음
+- 그래서 안전하게 문자열 반환
+
+---
+serializer 파일의 역할을 한 줄씩 요약하면
+- `ReviewImageSerializer`  
+    → 리뷰 이미지 정보를 응답용 JSON으로 변환
+- `ReviewAISerializer`  
+    → AI 분석 결과를 유연하게 응답용 JSON으로 변환
+- `ReviewSerializer`  
+    → 리뷰 1개를 프론트가 쓰기 좋은 형태로 확장해서 응답
+
+---
+전체 흐름으로 보면
+```
+Review 객체  
+   ↓  
+ReviewSerializer  
+   ↓  
+작성자 이름(username)  
+이미지 목록(images)  
+AI 결과(ai_result)  
+좋아요 수(likes_count)  
+북마크 수(bookmarks_count)  
+현재 사용자 상태(is_liked, is_bookmarked)  
+   ↓  
+프론트엔드에 JSON 응답
+```
+즉, 이 파일은 단순히 DB 값을 그대로 보내는 게 아니라
+프론트가 바로 화면에 그리기 좋은 형태로 가공해서 보내는 역할입니다.
 
 ---
 이 파일이 이번 단계의 핵심입니다.
@@ -445,44 +711,84 @@ from .serializers import (
 
 class IsOwnerOrReadOnly(permissions.BasePermission):
     """
-    작성자만 수정/삭제 가능
+    [유지]
+    작성자만 수정/삭제 가능하게 하는 권한 클래스
+    - GET, HEAD, OPTIONS 같은 읽기 요청은 모두 허용
+    - PUT, PATCH, DELETE 같은 수정 요청은 작성자만 허용
     """
 
     def has_object_permission(self, request, view, obj):
+        # [유지]
+        # 읽기 요청은 누구나 허용
         if request.method in permissions.SAFE_METHODS:
             return True
+
+        # [유지]
+        # 수정/삭제는 작성자 본인만 허용
         return obj.user == request.user
 
 
 class ReviewViewSet(viewsets.ModelViewSet):
     """
+    [수정]
     리뷰 CRUD API
-    - DELETE는 soft delete
+    - 목록 조회
+    - 상세 조회
+    - 생성
+    - 수정
+    - 삭제
+
+    현재 삭제 정책 변경 중:
+    - 예전: DELETE 시 DB에서 실제 삭제(물리 삭제)
+    - 지금: DELETE 시 is_deleted=True 처리(논리 삭제, Soft Delete)
     """
 
     serializer_class = ReviewSerializer
+
+    # [유지]
+    # 리뷰 생성/수정 시 일반 폼 데이터 + 파일 업로드 둘 다 받을 수 있게 설정
     parser_classes = [MultiPartParser, FormParser]
 
     def get_permissions(self):
+        """
+        [유지]
+        요청 종류(action)에 따라 권한을 다르게 적용
+        - list, retrieve: 누구나 조회 가능
+        - create, update, partial_update, destroy: 로그인 필요 + 작성자 권한 검사
+        """
         if self.action in ["list", "retrieve"]:
             permission_classes = [permissions.AllowAny]
         else:
             permission_classes = [permissions.IsAuthenticated, IsOwnerOrReadOnly]
+
         return [permission() for permission in permission_classes]
 
     def get_queryset(self):
         """
-        Soft Delete 기본 매니저(Review.objects)를 사용하므로
-        삭제된 리뷰는 자동 제외됩니다.
+        [수정]
+        리뷰 조회용 기본 queryset
+
+        Soft Delete 정책 변경 반영:
+        - Review.objects 는 살아있는 데이터만 조회하는 기본 매니저
+        - 따라서 삭제된 리뷰(is_deleted=True)는 자동으로 제외됨
+
+        추가 기능:
+        - user, product, ai_result는 JOIN 최적화
+        - images, likes, bookmarks는 미리 조회해서 성능 개선
+        - 공개 리뷰(is_public=True)만 노출
+        - 최신순 정렬
+        - product 쿼리파라미터가 있으면 상품별 필터링
         """
         queryset = (
-            Review.objects
+            Review.objects   # [수정] Soft Delete 기본 매니저 사용
             .select_related("user", "product", "ai_result")
             .prefetch_related("images", "likes", "bookmarks")
             .filter(is_public=True)
             .order_by("-created_at")
         )
 
+        # [유지]
+        # /reviews/?product=1 형태로 들어오면 해당 상품 리뷰만 조회
         product_id = self.request.query_params.get("product")
         if product_id:
             queryset = queryset.filter(product_id=product_id)
@@ -490,36 +796,71 @@ class ReviewViewSet(viewsets.ModelViewSet):
         return queryset
 
     def get_serializer_context(self):
+        """
+        [유지]
+        serializer 안에서 request를 사용할 수 있도록 context에 담아 전달
+        - 이미지 절대 URL 생성
+        - 현재 사용자 기준 좋아요/북마크 여부 계산
+        """
         context = super().get_serializer_context()
         context["request"] = self.request
         return context
 
     def perform_create(self, serializer):
+        """
+        [유지]
+        리뷰 생성 시 자동으로 현재 로그인 사용자를 작성자로 저장
+        - 프론트에서 user를 직접 보내지 않아도 됨
+        - 기본 공개 상태(is_public=True)로 저장
+        """
         if self.request.user.is_authenticated:
             serializer.save(user=self.request.user, is_public=True)
         else:
             raise ValidationError("리뷰 작성은 로그인 후 가능합니다.")
 
     def perform_update(self, serializer):
+        """
+        [유지]
+        리뷰 수정 시 작성자 본인인지 한 번 더 확인
+        - 권한 클래스가 있어도 안전하게 추가 검증
+        """
         review = self.get_object()
+
         if review.user != self.request.user:
             raise PermissionDenied("본인 리뷰만 수정할 수 있습니다.")
+
         serializer.save()
 
     def destroy(self, request, *args, **kwargs):
         """
-        기존 물리 삭제 대신 soft delete
+        [핵심 수정]
+        삭제 정책 변경 부분
+
+        예전 방식:
+        - instance.delete() 가 물리 삭제였다면 DB에서 진짜 삭제됨
+
+        지금 방식:
+        - Review가 SoftDeleteModel을 상속받고
+        - delete()가 논리 삭제로 바뀌었으므로
+        - 여기서 instance.delete()를 호출하면
+          실제 삭제가 아니라 is_deleted=True 로 변경됨
         """
         instance = self.get_object()
 
+        # [유지]
+        # 작성자 본인만 삭제 가능
         if instance.user != request.user:
             return Response(
                 {"detail": "본인 리뷰만 삭제할 수 있습니다."},
                 status=status.HTTP_403_FORBIDDEN,
             )
 
+        # [수정]
+        # 물리 삭제 대신 soft delete 수행
         instance.delete()
 
+        # [수정]
+        # 프론트가 soft delete 여부를 알 수 있도록 응답 명시
         return Response(
             {
                 "message": "리뷰가 삭제되었습니다.",
@@ -531,15 +872,23 @@ class ReviewViewSet(viewsets.ModelViewSet):
 
 class MyReviewListAPIView(generics.ListAPIView):
     """
-    내 리뷰 목록
-    - soft delete 된 리뷰는 기본적으로 제외
+    [유지 + Soft Delete 영향 있음]
+    내 리뷰 목록 조회 API
+    - 로그인한 사용자의 리뷰만 보여줌
+    - Review.objects 를 쓰므로 soft delete 된 리뷰는 자동 제외됨
     """
+
     serializer_class = ReviewSerializer
     permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
+        """
+        [수정 의미 있음]
+        현재 로그인한 사용자의 리뷰만 조회
+        - 삭제된 리뷰는 Soft Delete 기본 매니저 때문에 자동으로 빠짐
+        """
         return (
-            Review.objects
+            Review.objects   # [수정 의미] soft delete 반영된 기본 매니저
             .select_related("user", "product", "ai_result")
             .prefetch_related("images", "likes", "bookmarks")
             .filter(user=self.request.user)
@@ -547,30 +896,59 @@ class MyReviewListAPIView(generics.ListAPIView):
         )
 
     def get_serializer_context(self):
+        """
+        [유지]
+        serializer 내부에서 request 사용 가능하게 전달
+        """
         return {"request": self.request}
 
 
 class ReviewImageUploadAPIView(APIView):
+    """
+    [유지]
+    리뷰 이미지 업로드 API
+    - 로그인한 사용자만 가능
+    - 본인 리뷰에만 이미지 추가 가능
+    - 여러 장 업로드 가능
+    """
+
     permission_classes = [permissions.IsAuthenticated]
     parser_classes = [MultiPartParser, FormParser]
 
     def post(self, request, review_id):
+        """
+        [유지 + Soft Delete 간접 반영]
+        review_id에 해당하는 리뷰를 찾아 이미지 업로드
+
+        Soft Delete 영향:
+        - get_object_or_404(Review, id=review_id) 에서 Review.objects 사용
+        - 따라서 삭제된 리뷰는 찾지 못함
+        - 즉, 삭제된 리뷰에는 이미지 업로드가 자동 차단됨
+        """
         review = get_object_or_404(Review, id=review_id)
 
+        # [유지]
+        # 본인 리뷰에만 이미지 업로드 가능
         if review.user != request.user:
             return Response(
                 {"detail": "본인 리뷰에만 이미지를 추가할 수 있습니다."},
                 status=status.HTTP_403_FORBIDDEN,
             )
 
+        # [유지]
+        # 프론트에서 uploaded_images 이름으로 여러 파일 받기
         files = request.FILES.getlist("uploaded_images")
 
+        # [유지]
+        # 파일이 없으면 예외 응답
         if not files:
             return Response(
                 {"detail": "업로드할 이미지가 없습니다."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
+        # [유지]
+        # 여러 파일을 순회하며 DB에 저장
         created_images = []
         for file in files:
             image = ReviewImage.objects.create(
@@ -579,6 +957,8 @@ class ReviewImageUploadAPIView(APIView):
             )
             created_images.append(image)
 
+        # [유지]
+        # 저장된 이미지 목록을 serializer로 변환 후 응답
         serializer = ReviewImageSerializer(
             created_images,
             many=True,
@@ -588,20 +968,39 @@ class ReviewImageUploadAPIView(APIView):
 
 
 class ReviewAIResultAPIView(APIView):
+    """
+    [유지 + Soft Delete 간접 반영]
+    특정 리뷰의 AI 분석 결과 조회 API
+    - 공개 조회 허용
+    - 삭제된 리뷰는 기본 매니저 때문에 조회되지 않음
+    """
+
     permission_classes = [permissions.AllowAny]
 
     def get(self, request, review_id):
+        """
+        [유지 + 수정 의미 있음]
+        review_id에 해당하는 리뷰의 AI 결과를 반환
+
+        Soft Delete 영향:
+        - Review.objects.select_related("ai_result") 사용
+        - 삭제된 리뷰는 자동 제외
+        """
         review = get_object_or_404(
             Review.objects.select_related("ai_result"),
             id=review_id,
         )
 
+        # [유지]
+        # AI 결과가 아직 없으면 404 반환
         if not hasattr(review, "ai_result"):
             return Response(
                 {"detail": "AI 분석 결과가 없습니다."},
                 status=status.HTTP_404_NOT_FOUND,
             )
 
+        # [유지]
+        # AI 결과를 serializer로 변환해서 응답
         serializer = ReviewAISerializer(review.ai_result)
         return Response(serializer.data, status=status.HTTP_200_OK)
 ```
@@ -614,59 +1013,94 @@ from django.contrib import admin
 from .models import Review, ReviewImage, ReviewAI
 
 
+# [추가]
+# 관리자에서 선택한 리뷰를 복구하는 액션
 @admin.action(description="선택한 리뷰 복구")
 def restore_reviews(modeladmin, request, queryset):
     for obj in queryset:
-        obj.restore()
+        obj.restore()   # Soft Delete 복구
 
 
+# [추가]
+# 관리자에서 선택한 리뷰를 진짜 DB에서 삭제하는 액션
 @admin.action(description="선택한 리뷰 완전 삭제")
 def hard_delete_reviews(modeladmin, request, queryset):
     for obj in queryset:
-        obj.hard_delete()
+        obj.hard_delete()   # 물리 삭제
 
 
+# [추가]
+# 관리자에서 선택한 리뷰를 논리 삭제하는 액션
 @admin.action(description="선택한 리뷰 삭제(논리 삭제)")
 def soft_delete_reviews(modeladmin, request, queryset):
     for obj in queryset:
-        obj.delete()
+        obj.delete()   # Soft Delete 실행
 
 
 class ReviewImageInline(admin.TabularInline):
+    # [유지]
+    # 리뷰 상세 화면에서 연결된 이미지들을 함께 보이게 함
     model = ReviewImage
     extra = 0
 
 
 class ReviewAIInline(admin.StackedInline):
+    # [유지]
+    # 리뷰 상세 화면에서 AI 결과를 함께 보이게 함
     model = ReviewAI
     extra = 0
-    can_delete = False
+    can_delete = False   # [유지] 인라인에서 AI 결과 직접 삭제 방지
 
 
 @admin.register(Review)
 class ReviewAdmin(admin.ModelAdmin):
+    # [수정]
+    # 목록에서 soft delete 관련 필드까지 보이도록 확장
     list_display = [
         "id",
         "product",
         "user",
         "rating",
         "is_public",
-        "is_deleted",
-        "deleted_at",
+        "is_deleted",   # [추가] 삭제 여부 확인용
+        "deleted_at",   # [추가] 삭제 시각 확인용
         "created_at",
     ]
-    list_filter = ["is_public", "is_deleted", "created_at"]
+
+    # [수정]
+    # 삭제 여부로 필터링 가능하게 추가
+    list_filter = [
+        "is_public",
+        "is_deleted",   # [추가]
+        "created_at",
+    ]
+
+    # [유지]
+    # 검색 필드
     search_fields = ["content", "product__name", "user__username"]
+
+    # [추가]
+    # 관리자 액션에 soft delete / restore / hard delete 추가
     actions = [soft_delete_reviews, restore_reviews, hard_delete_reviews]
+
+    # [유지]
+    # 리뷰 상세 화면에 이미지/AI 결과 함께 표시
     inlines = [ReviewImageInline, ReviewAIInline]
 
     def get_queryset(self, request):
+        # [수정]
+        # 기본 Review.objects 대신 Review.all_objects 사용
+        # → 삭제된 리뷰도 관리자에서 보이게 함
         return Review.all_objects.select_related("user", "product").all()
 
     def delete_model(self, request, obj):
+        # [수정]
+        # 관리자 상세 화면에서 delete 시 물리 삭제가 아니라 soft delete 되도록 변경
         obj.delete()
 
     def delete_queryset(self, request, queryset):
+        # [수정]
+        # 관리자 목록에서 여러 개 삭제해도 물리 삭제가 아니라 soft delete 되도록 변경
         for obj in queryset:
             obj.delete()
 ```
@@ -948,6 +1382,21 @@ else:
 3. 다나와가 검색 페이지 크롤링 금지 상태
 4. 그래서 코드가 요청을 안 보내고 막음
 
+전체 흐름
+```
+크로링 실행
+    ↓
+URL 분석
+    ↓
+robots.txt 주소 생성
+    ↓
+그 사이트 서버에서 robots.txt 가져옴
+    ↓
+Disallow 규칙 확인
+    ↓
+크롤링 가능 / 불가 판단
+```
+
 ---
 ### 그래서 아래 코드는 다음과 같은 내용을 변경합니다.
 
@@ -1059,62 +1508,89 @@ def fetch_page(url: str, timeout: int = 15) -> requests.Response:
 from django.utils import timezone
 
 from apps.crawling.models import CrawlRawData
-from .http import fetch_page
-from .parser import extract_page_info
+from .http import fetch_page          # 페이지 요청 (robots + retry 포함)
+from .parser import extract_page_info # HTML 분석해서 정보 추출
 
 
 def crawl_search_target(target):
     """
-    [유지 + 부분수정]
-    검색 페이지를 크롤링해서:
-    - 페이지 정보 추출
-    - 상품 상세 링크 후보 저장
-    - 마지막 크롤링 시간 갱신
-    - 요약 정보 반환
+    검색 페이지 크롤링 함수
+
+    전체 흐름:
+    1. 페이지 요청
+    2. HTML 파싱
+    3. 페이지 정보 저장
+    4. (있다면) 상품 링크 저장
+    5. 마지막 크롤링 시간 업데이트
     """
 
+    # 1️⃣ 페이지 요청
+    # → 내부적으로 robots.txt 검사 + retry + delay 적용됨
     response = fetch_page(target.url)
+
+    # HTML 문자열 추출
     html = response.text
 
+
+    # 2️⃣ HTML 분석 (파싱)
+    # → 제목, 텍스트, a 태그 개수 등 추출
     page_info = extract_page_info(html)
 
-    # [수정] extract_candidate_links 함수가 현재 없으므로 임시로 빈 리스트 처리
+
+    # 3️⃣ 상품 링크 후보 리스트
+    # ⚠ 현재는 구현 안되어 있어서 빈 리스트
     candidate_links = []
 
+
+    # 4️⃣ 페이지 전체 정보 저장 (로그 성격)
     CrawlRawData.objects.create(
-        target=target,
-        source_url=target.url,
-        page_title=page_info["title"],
-        raw_text=page_info["text_preview"],
-        raw_html=html[:5000],
+        target=target,                 # 어떤 크롤링 대상인지
+        source_url=target.url,         # 요청한 URL
+        page_title=page_info["title"], # 페이지 제목
+        raw_text=page_info["text_preview"],  # 일부 텍스트
+        raw_html=html[:5000],          # HTML 일부 저장 (너무 크니까 잘라서 저장)
+
+        # 추가 정보(JSON)
         extra_data={
-            "a_count": page_info["a_count"],
-            "contains_review_word": page_info["contains_review_word"],
-            "contains_keyword": page_info["contains_keyword"],
-            "type": "page_info",
+            "a_count": page_info["a_count"],  # 링크 개수
+            "contains_review_word": page_info["contains_review_word"],  # 리뷰 관련 단어 포함 여부
+            "contains_keyword": page_info["contains_keyword"],          # 키워드 포함 여부
+            "type": "page_info",  # 데이터 타입 구분용
         },
     )
 
+
+    # 5️⃣ 상품 링크 저장 (있다면)
+    # → 현재는 candidate_links가 빈 리스트라 실행 안됨
     for item in candidate_links[:20]:
+
         CrawlRawData.objects.create(
             target=target,
             source_url=target.url,
             page_title=page_info["title"],
-            item_title=item["title"],
-            item_url=item["url"],
+
+            # 상품 정보
+            item_title=item["title"],   # 상품 이름
+            item_url=item["url"],       # 상품 링크
+
             raw_text="",
             raw_html="",
+
             extra_data={
-                "type": "candidate_link",
+                "type": "candidate_link",  # 이 데이터는 링크 정보임
             },
         )
 
+
+    # 6️⃣ 마지막 크롤링 시간 업데이트
     target.last_crawled_at = timezone.now()
     target.save(update_fields=["last_crawled_at"])
 
+
+    # 7️⃣ 결과 반환 (로그/테스트용)
     return {
-        "page_title": page_info["title"],
-        "candidate_count": len(candidate_links),
+        "page_title": page_info["title"],       # 페이지 제목
+        "candidate_count": len(candidate_links), # 추출된 링크 개수
     }
 ```
 

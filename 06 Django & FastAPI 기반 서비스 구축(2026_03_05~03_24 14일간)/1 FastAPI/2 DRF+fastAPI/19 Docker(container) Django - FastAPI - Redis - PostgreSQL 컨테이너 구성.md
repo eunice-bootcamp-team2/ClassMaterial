@@ -667,6 +667,7 @@ Docker Compose version v2.29.2
 ```
 이게 나와야 정상
 
+----
 프로젝트 폴더 이동 후 컨테이너로 실행
 ```bash
 cd ~/product-review-service/backend
@@ -814,7 +815,7 @@ def crawl_product_review_target(target, review_limit: int = 20) -> dict:
 다시 말해서 12번 단계에서는 사이트별 collector를 상단 import해도 큰 문제가 없었지만, 19번 이후 Docker 기반 멀티서비스 환경으로 전환되면서 특정 collector의 의존성 문제가 전체 크롤링 명령을 막을 수 있었습니다. 이를 방지하기 위해 `crawl_service.py`에서 사이트별 collector를 함수 내부에서 지연 import하도록 수정하였습니다.
 
 ---
-### Docker로 넘어가면 “필수 운영 가이드
+### Docker로 넘어가면 필수 운영 가이드
 
 (1) 기본 위치
 항상 먼저 여기로 이동:

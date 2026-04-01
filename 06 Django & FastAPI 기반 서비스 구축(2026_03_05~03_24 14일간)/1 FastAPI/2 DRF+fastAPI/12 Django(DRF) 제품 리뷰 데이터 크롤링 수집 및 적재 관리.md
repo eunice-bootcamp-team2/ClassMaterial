@@ -432,18 +432,18 @@ INSTALLED_APPS = [
 
 crawling 앱 디렉토리 확장
 ```bash
-mkdir -p apps/crawling/management/commands
-mkdir -p apps/crawling/services
-mkdir -p apps/crawling/collectors
+mkdir -p crawling/management/commands
+mkdir -p crawling/services
+mkdir -p crawling/collectors
 
-touch apps/crawling/management/__init__.py
-touch apps/crawling/management/commands/__init__.py
-touch apps/crawling/services/__init__.py
-touch apps/crawling/collectors/__init__.py
-touch apps/crawling/services/http.py
-touch apps/crawling/services/parser.py
-touch apps/crawling/services/crawl_service.py
-touch apps/crawling/management/commands/test_crawl.py
+touch crawling/management/__init__.py
+touch crawling/management/commands/__init__.py
+touch crawling/services/__init__.py
+touch crawling/collectors/__init__.py
+touch crawling/services/http.py
+touch crawling/services/parser.py
+touch crawling/services/crawl_service.py
+touch crawling/management/commands/test_crawl.py
 ```
 
 최종 구조 : ③ 수집 + 저장 흐름 (초기 버전)
@@ -496,7 +496,7 @@ uv pip freeze > requirements.txt
     - 성공/실패, 처리 건수, 시작/종료 시간, 메시지 저장
 - 즉, 실행 로그 저장소입니다.
 
-`apps/crawling/models.py`
+### 1 `apps/crawling/models.py`
 ```python
 from django.db import models
 
@@ -1260,7 +1260,7 @@ apps/crawling/
 └── admin.py                          # Django Admin 등록
 ```
 
-추가 생성할 파일
+### 추가 생성할 파일
 ```bash
 mkdir -p apps/crawling/collectors
 touch apps/crawling/collectors/danawa_collector.py
@@ -1772,12 +1772,41 @@ apps/crawling/
 └── tests.py                 # [4단계 추가] 중복 저장 방지 테스트
 ```
 
+3단계
+```
+CrawlRawData.objects.create()  
+→ 매번 새로 저장됨  
+→ 중복 데이터 계속 쌓임 ❌  
+→ 운영하면 DB 터짐
+```
+4단계에서 바뀐것
+```
+update_or_create (upsert)  
+→ 있으면 UPDATE  
+→ 없으면 CREATE
+```
+✔ 중복 방지  
+✔ 데이터 최신 상태 유지  
+✔ 실서비스 가능 구조
+
 ### 파일 생성 여기까지 테스트
 ```bash
 touch apps/crawling/services/repository.py
 ```
 
-`apps/crawling/models.py`
+파일별 처리흐름
+```
+test_crawl.py  
+→ crawl_service.py  
+→ 사이트별 collector  
+→ parser.py / http.py  
+→ save_service.py  
+→ repository.py  
+→ DB 저장
+```
+
+### 2`apps/crawling/models.py` : record_type, unique_key가 추가
+데이터 종류를 구분하고 중복 저장을 막을 수 있게 바뀌었습니다.
 ```python
 from django.db import models
 
@@ -1920,6 +1949,11 @@ class CrawlRawData(models.Model):
         blank=True,
         null=False,
     )
+    # 데이터 식별자 (PK처럼 사용)
+    # 같은 데이터인지 판단 기준
+    # 이 데이터 이미 있냐? 판단 기준
+    
+    
     # [4단계 추가 끝]
 
     crawled_at = models.DateTimeField(
@@ -2000,6 +2034,8 @@ class CrawlJobLog(models.Model):
 ```
 
 `apps/crawling/admin.py`
+관리자 페이지에서 크롤링 대상, 수집 데이터, 실행 로그를 보기 쉽게 확인하는 파일입니다.  
+4단계에서는 `record_type`, `unique_key`도 보이도록 수정되어 중복 여부와 데이터 종류를 확인할 수 있게 되었습니다
 ```python
 from django.contrib import admin
 from .models import CrawlTarget, CrawlRawData, CrawlJobLog
@@ -2056,7 +2092,7 @@ class CrawlJobLogAdmin(admin.ModelAdmin):
     ordering = ("-started_at",)
 ```
 
-`apps/crawling/services/parser.py`
+`apps/crawling/services/parser.py` 수정없음
 ```python
 from bs4 import BeautifulSoup
 
@@ -2087,7 +2123,7 @@ def extract_page_info(html: str) -> dict:
 # [4단계에서는 parser 수정 없음]
 ```
 
-`apps/crawling/collectors/danawa_collector.py`
+`apps/crawling/collectors/danawa_collector.py` : 다나와 전용
 ```python
 from urllib.parse import urljoin
 
@@ -2139,7 +2175,7 @@ def collect_danawa_search(target) -> dict:
     }
 ```
 
-`apps/crawling/collectors/hwahae_collector.py`
+`apps/crawling/collectors/hwahae_collector.py` : 다해 전용
 ```python
 from urllib.parse import urljoin
 
@@ -2198,7 +2234,7 @@ def collect_hwahae_search(target) -> dict:
     }
 ```
 
-`apps/crawling/collectors/glowpick_collector.py`
+`apps/crawling/collectors/glowpick_collector.py` : 글로우픽 전용
 ```python
 from urllib.parse import urljoin
 
@@ -2257,7 +2293,9 @@ def collect_glowpick_search(target) -> dict:
     }
 ```
 
-`apps/crawling/services/repository.py` 추가
+`apps/crawling/services/repository.py` 
+DB 직접 접근만 담당하는 파일입니다.  
+4단계에서 새로 추가되었고, `update_or_create()`를 사용해 있으면 수정, 없으면 생성하는 역할을 맡습니다.
 ```python
 from apps.crawling.models import CrawlRawData
 
@@ -2279,7 +2317,10 @@ def upsert_raw_data(unique_key: str, defaults: dict):
     return obj, created
 ```
 
-`apps/crawling/services/save_service.py` 수정
+`apps/crawling/services/save_service.py` 
+크롤링 결과를 어떻게 저장할지 정리하는 핵심 저장 서비스입니다.  
+4단계에서 가장 중요하게 수정된 파일로,  
+`unique_key` 생성, 해시 처리, page_info/candidate_link 구분, upsert 처리까지 담당합니다.
 ```python
 import hashlib
 
@@ -2388,10 +2429,10 @@ def save_search_result(target, result: dict) -> dict:
         candidate_key = build_candidate_unique_key(target, item["url"])
 
         # 필요하면 한 번만 디버깅
-        # print("candidate title len =", len(item["title"]))
-        # print("candidate url len =", len(item["url"]))
-        # print("candidate unique_key len =", len(candidate_key))
-        # print("page title len =", len(page_info["title"]))
+        print("candidate title len =", len(item["title"]))
+        print("candidate url len =", len(item["url"]))
+        print("candidate unique_key len =", len(candidate_key))
+        print("page title len =", len(page_info["title"]))
 
         _, created = upsert_raw_data(
             unique_key=candidate_key,
@@ -2418,7 +2459,10 @@ def save_search_result(target, result: dict) -> dict:
     }
 ```
 
-`apps/crawling/services/crawl_service.py` 수정
+`apps/crawling/services/crawl_service.py` 
+전체 흐름을 조정하는 중앙 제어 파일입니다.  
+사이트에 따라 collector를 고르고, collector 결과를 save_service로 넘깁니다.  
+즉, 누가 수집하고 누가 저장할지 연결하는 역할입니다.
 ```python
 from apps.crawling.collectors.danawa_collector import collect_danawa_search
 from apps.crawling.collectors.hwahae_collector import collect_hwahae_search
@@ -2456,7 +2500,9 @@ def crawl_search_target(target) -> dict:
     }
 ```
 
-`apps/crawling/management/commands/test_crawl.py` 수정
+`apps/crawling/management/commands/test_crawl.py` 
+터미널에서 `python manage.py test_crawl` 실행 시 시작되는 파일입니다.  
+활성화된 대상을 불러와 크롤링을 돌리고, 성공/실패와 create/update 결과를 로그로 남깁니다.
 ```python
 from django.core.management.base import BaseCommand
 from django.utils import timezone
@@ -2551,7 +2597,9 @@ class Command(BaseCommand):
         )
 ```
 
-`apps/crawling/tests.py` 수정
+`apps/crawling/tests.py` 
+크롤링 저장 로직이 제대로 동작하는지 테스트하는 파일입니다.  
+4단계에서는 특히 중복 저장 방지, update_or_create 정상 동작을 검증하는 용도로 중요해졌습니다.
 ```python
 from django.test import TestCase
 
@@ -2638,47 +2686,82 @@ python manage.py makemigrations crawling
 python manage.py migrate
 ```
 
-3단계에서는
-- `collector`가 수집
-- `crawl_service`가 저장 서비스 호출
-- `save_service` 안에서 DB ORM 작업까지 전부 직접 수행
+1️⃣ 모델 변경 (중복 제거 핵심)
 
-4단계에서는 
-- `collector`  
-    → HTML 수집/파싱 결과 반환만 담당
-    
-- `crawl_service`  
-    → collector 선택 + save_service 호출만 담당
-    
-- `save_service`  
-    → 저장 흐름 제어, 고유키 생성, 저장 정책(create/update) 결정
-    
-- `repository.py`  
-    → `update_or_create()` 같은 ORM 직접 호출만 담당
-    
-즉, 4단계의 핵심은 DB 저장 흐름과 DB 직접 접근을 다시 한 번 나눈 것입니다.
-
-단위 테스트 실행
-```bash
-python manage.py test apps.crawling.tests
+추가된 것
 ```
-- 첫 저장 시 `created_count > 0`
-- 같은 데이터 재저장 시 `updated_count > 0`
-- 총 row 수는 늘어나지 않음
+unique_key  ← 중복 판단 기준 (unique=True)  
+record_type ← 데이터 종류 구분 (page / link)
+```
 
+✔ 역할
+- `unique_key` → 같은 데이터인지 판단
+- `record_type` → 어떤 데이터인지 구분
+
+결과  
+중복 데이터 저장 불가능 구조로 변경
+
+---
+2️⃣ 저장 방식 변경 (가장 중요)
+❌ 3단계
+```
+create()  
+→ 무조건 INSERT  
+→ 중복 계속 쌓임
+```
+
+✅ 4단계
+```
+update_or_create()  
+→ 있으면 UPDATE  
+→ 없으면 CREATE
+```
+
+핵심  
+중복 저장 → 덮어쓰기(upsert)로 변경
+
+---
+3️⃣ 로직 분리 (구조 개선)
+
+❌ 3단계
+```
+crawl_service 안에 다 있음  
+(수집 + 파싱 + 저장)
+```
+
+✅ 4단계
+```
+collector → 수집  
+parser → 분석  
+save_service → 저장 준비  
+repository → DB 저장
+```
+
+핵심  
+역할별로 분리해서 유지보수 가능하게 변경
+
+---
+4️⃣ unique_key 생성 로직 추가
+```
+site + url → 해시(SHA256)
+```
+
+핵심  
+데이터마다 고유 ID 생성
+
+---
+3단계 = 구조 분리 
+4단계 = unique_key + update_or_create로 중복 없는 저장 구조 완성
+
+- `unique_key` 추가 → 중복 기준 생성
+- `update_or_create` → 중복 저장 방지
+- `save_service / repository 분리` → 구조 정리
+
+---
 테스트 크롤링 2번 실행
 ```bash
 python manage.py test_crawl  
 ```
-첫 번째 실행:
-- `created`가 많이 나옴
-- `updated`는 거의 0이거나 적음
-    
-
-두 번째 실행:
-- 같은 대상이면 created가 거의 0
-- updated가 증가
-- 레코드 수가 무한히 늘어나지 않음
 
 4단계 로직분리 성공
 ![[Pasted image 20260315154617.png]]
@@ -2769,7 +2852,7 @@ CrawlTarget
 자동화 도구 cron
 리눅스 서버에서 주기적으로 파이썬 명령 실행
 
-목표
+목표 : `수동 실행 → 자동 스케줄링 + 대상 선택 로직 추가`
 - `CrawlTarget` 중에서 이번 차례에 돌릴 대상만 선택
 - `python manage.py scheduled_crawl --limit 3` 처럼 실행 가능
 - cron이 1시간마다 이 명령어 실행
@@ -2806,7 +2889,14 @@ touch apps/crawling/services/target_selector.py
 touch apps/crawling/management/commands/scheduled_crawl.py
 ```
 
-`apps/crawling/models.py` 수정 : 스케줄링 제어용 필드 추가
+스케줄링을 위한 필드 추가 : 언제 돌릴지 + 무엇을 먼저 돌릴지 결정 가능
+```
+crawl_interval_minutes ← 재수집 주기  
+priority ← 우선순위  
+last_crawled_at ← 마지막 실행 시간
+```
+
+### 3`apps/crawling/models.py` 수정 : 스케줄링 제어용 필드 추가
 ```python
 from django.db import models
 
@@ -3041,6 +3131,9 @@ class CrawlJobLog(models.Model):
 ```
 
 `apps/crawling/admin.py` 수정 : 관리자에서 interval, priority를 볼 수 있게 추가합니다.
+관리자에서 스케줄링 설정 확인 가능
+- priority 표시
+- interval 표시
 ```python
 from django.contrib import admin
 from .models import CrawlTarget, CrawlRawData, CrawlJobLog
@@ -3101,13 +3194,15 @@ class CrawlJobLogAdmin(admin.ModelAdmin):
 ---
 target 선택 서비스 추가
 이 파일이 5단계 핵심입니다.
-- active 대상만 조회
-- `last_crawled_at`이 비어 있으면 먼저
-- 아니면 오래된 순
-- 너무 최근에 돌린 건 제외
-- limit 개수만 반환
 
-`apps/crawling/services/target_selector.py`
+이번에 실행할 target만 고르는 파일
+역할:
+- 아직 안 돌린 것 우선
+- 오래된 것 우선
+- interval 지난 것만 선택
+- limit 개수만큼만 반환
+
+`apps/crawling/services/target_selector.py` : 지금 실행해야 할 대상만 고르는 로직
 ```python
 from datetime import timedelta
 
@@ -3187,7 +3282,14 @@ def get_due_targets(limit: int = 3, target_type: str = "search"):
 ```
 ---
 자동 실행용 management command 추가
-이제 테스트용 `test_crawl` 말고 실제로 cron이 실행할 명령어를 따로 만듭니다.
+
+자동 실행용 명령어
+역할:
+- target_selector 호출
+- crawl_service 실행
+- 결과 로그 저장
+cron이 실행하는 진짜 entry point
+
 `apps/crawling/management/commands/scheduled_crawl.py`
 ```python
 from django.core.management.base import BaseCommand
@@ -3536,6 +3638,7 @@ AI 분석에 필요한 데이터 추가 크롤링
 |가성비 좋음|4|
 
 ---
+JavaScript로 렌더링되는 데이터를 수집하기 위해 Selenium을 도입
 ### 리뷰를 위한 추가 디렉토리
 ```
 apps/crawling/collectors/ 
@@ -4326,7 +4429,7 @@ apps/crawling/
         └── scheduled_crawl.py        ✔ = 수정 필요
 ```
 
-`apps/crawling/models.py` (수정)
+### 4`apps/crawling/models.py` (수정)
 ```python
 from django.db import models
 

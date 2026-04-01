@@ -10,6 +10,17 @@
 - 추론
 - 결과 반환
 
+어떻게 들어왔는지? DRF(무엇으로 http json) ->
+{값:0.67}
+
+json(검증) -> json(검증) 형식의 조건
+
+
+
+http json만들어서 - > http방식으로 json
+
+
+
 ---
 ### 모델선정
 upskyy/e5-small-korean 모델은 문장을 384차원 벡터로 변환하는 Sentence Transformer 모델입니다.  
@@ -47,6 +58,43 @@ Fast API 임시 디렉토리 구조
 │   │   └── recommend_schema.py
 │   └── services/
 │       └── recommend_service.py  
+```
+
+```
+├── ai-server/                      # FastAPI (AI 서버 전체 루트)
+│
+│   ├── main.py (Django settings.py + urls.py)
+│   │   # FastAPI 앱 실행 진입점
+│   │   # 라우터 연결 + 서버 시작 (uvicorn이 여기서 실행됨)
+│
+│   ├── test_embedding.py
+│   │   # AI 모델 단독 테스트 파일
+│   │   # 서버 없이 임베딩 생성/유사도 계산이 정상 동작하는지 확인
+│
+│   ├── api/
+│   │   └── recommend.py
+│   │       # API 엔드포인트 정의 (FastAPI의 View 역할)
+│   │       # Django에서 요청을 받는 "입구"
+│   │       # → 서비스 로직 호출 후 JSON 응답 반환
+│
+│   ├── models/
+│   │   └── embedding_model.py
+│   │       # AI 모델 로딩 전용 파일
+│   │       # SentenceTransformer를 서버 시작 시 1번만 메모리에 로드
+│   │       # (요청마다 로딩하면 너무 느리기 때문)
+│
+│   ├── schemas/
+│   │   └── recommend_schema.py
+│   │       # 요청/응답 데이터 구조 정의 (Pydantic)
+│   │       # JSON → Python 자동 변환 + 데이터 검증
+│   │       # (DRF의 Serializer와 같은 역할)
+│
+│   └── services/
+│       └── recommend_service.py
+│           # 핵심 비즈니스 로직 (AI 처리)
+│           # 문장 → 임베딩 생성
+│           # 벡터 → 유사도 계산
+│           # 실제 "AI 기능"이 수행되는 곳
 ```
 
 설치할 라이브러리
@@ -254,6 +302,7 @@ class SimilarityRequest(BaseModel):
 
 class SimilarityResponse(BaseModel):
     similarity: float
+  
 ```
 `BaseModel`은 Pydantic 라이브러리에서 제공하는 클래스입니다
 - 요청 데이터 자동 검증
