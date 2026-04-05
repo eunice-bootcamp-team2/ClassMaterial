@@ -20,7 +20,6 @@
 ```
 
 `backend/apps/accounts/views.py`
-
 ```python
 from django.shortcuts import get_object_or_404
 
@@ -111,7 +110,7 @@ class MeAPIView(generics.RetrieveAPIView):
 
 회원가입
 ```bash
-curl -X POST http://127.0.0.1:8000/accounts/signup/ \
+curl -X POST http://127.0.0.1:8900/accounts/signup/ \
   -H "Content-Type: application/json" \
   -d '{
     "username": "testuser3",

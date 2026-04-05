@@ -1,7 +1,6 @@
 ### Docker 컨테이너 구조를 만드는 이유
 
-우리가 지금 하고 있는건 하나의 프로그램을 만드는 게 아니라  
-여러 개의 프로그램이 함께 동작하는 시스템을 만들고 있습니다.
+우리가 지금 하고 있는건 하나의 프로그램을 만드는 게 아니라 여러 개의 프로그램이 함께 동작하는 시스템을 만들고 있습니다.
 
 예를 들어 현재 구조는 이렇게 나뉘어 있습니다.
 ```
@@ -29,18 +28,88 @@ Docker 안:
 이게 왜 문제냐면…
 
 ❌ 문제 1: 주소 문제 (127.0.0.1)
-- Docker 안에서 `127.0.0.1` = 자기 자신
-- 그런데 FastAPI는 밖(로컬)에 있음
-    
-그래서 Celery가 FastAPI를 못 찾는 문제가 발생
+`127.0.0.1`은 쉽게 말하면 나 자신 즉, 지금 내가 서 있는 바로 이 컴퓨터라는 뜻입니다.
+내 컴퓨터에서 실행중인 서버는 8001번 서버입니다.
+그러나 Docker 컨테이너 안에서 `127.0.0.1:8001` 그 컨테이너 자기 자신 안의 8001번 서버입니다. 같은 숫자여도 보는 위치가 다르면 의미가 달라집니다.
+
+로컬에서 Django와 FastAPI를 둘 다 직접 실행하면 보통 이렇게 하죠.
+- Django: `127.0.0.1:8000`
+- FastAPI: `127.0.0.1:8001`
+
+이 상태에서는 잘 됩니다.  
+왜냐하면 둘 다 내 컴퓨터 안에 있기 때문입니다.
+
+그런데 Docker로 Django와 Celery를 띄우면 이야기가 달라집니다.
+예를 들어 Celery가 Docker 안에 있고,  
+FastAPI는 내 컴퓨터 바깥 로컬에서 따로 켜져 있다고 해봅시다.
+```
+내 실제 컴퓨터 (Host)
+│
+├── Docker 컨테이너 A (Django)
+├── Docker 컨테이너 B (Celery)
+├── Docker 컨테이너 C (Redis)
+│
+└── (밖) FastAPI (내 컴퓨터에서 그냥 실행)
+```
+그런데 자기 안에는 FastAPI가 없습니다. FastAPI는 컨테이너 밖에 있기 때문입니다.
+
+그래서 결과는:
+- 연결 실패
+- timeout
+- connection refused가 납니다.
+
+그래서 각 역할별로 컨테이너를 나누는 것이 원칙에 가깝습니다.
+```
+Django → 컨테이너 1개  
+Celery → 컨테이너 1개  
+FastAPI → 컨테이너 1개  
+Redis → 컨테이너 1개  
+DB → 컨테이너 1개
+```
+
+| 서비스     | 역할                |
+| ------- | ----------------- |
+| Django  | 사용자 요청 처리 (웹/API) |
+| Celery  | 백그라운드 작업          |
+| FastAPI | AI 처리             |
+| Redis   | 큐                 |
+| DB      | 데이터 저장            |
+Docker에 컨테이너에 담으면 포트는 이렇게 됩니다.
+```
+내 컴퓨터 (Host)
+│
+├── 컨테이너1 → Django (8000)
+├── 컨테이너2 → FastAPI (8001)
+├── 컨테이너3 → Redis (6379)
+├── 컨테이너4 → Celery
+├── 컨테이너5 → DB (5432)
+```
+
+- 여러 서비스를 하나의 명령어로 동시에 실행하여 운영을 단순화할 수 있습니다.
+- 각 서비스가 동일한 네트워크 안에서 실행되기 때문에, `127.0.0.1`이 아닌 서비스 이름(`fastapi`, `db`, `redis`)으로 서로를 안정적으로 찾을 수 있습니다.
+- 개발 환경, 팀원 환경, 배포 환경을 동일하게 맞출 수 있어 내 컴퓨터에서는 되는데 다른 곳에서는 안 되는 문제를 방지할 수 있습니다.
+- 서비스별로 컨테이너를 분리함으로써 장애 발생 시 특정 서비스만 재시작하거나 확장할 수 있어 유지보수와 운영이 훨씬 수월해집니다.
 
 ---
 ❌ 문제 2: 실행 순서 문제
-- Django 실행됨
-- Celery 실행됨
-- 그런데 FastAPI 안 켜짐
-    
-그럼 Celery 작업 실패
+만약 도커에 Django와 Celery가 있고 fast api는 도커 밖에 있을 경우 실행되었을때
+상황
+- Django → Docker 안에서 실행
+- Celery → Docker 안에서 실행
+- FastAPI → `uvicorn`으로 따로 실행 이 경우는 FastAPI를 먼저 켜두는 게 안전합니다.
+
+왜냐하면 처리순서가 있기 때문입니다.
+- 사용자가 Django에 요청
+- Django가 Celery에게 작업 시킴
+- Celery가 FastAPI 호출
+- 그런데 FastAPI가 아직 안 켜져 있으면 실패
+
+즉, Celery는 실행만 되어 있다고 바로 문제는 아니고, 실제 작업을 수행하는 순간 FastAPI가 필요합니다. Celery가 일을 시작했는데, 그때 FastAPI가 준비되지 않으면 작업이 실패할 수 있습니다.
+그래서 모든 서비스를 Docker 컨테이너로 만들어 한꺼번에 관리하는 것이 가장 안정적이고 실무적인 방식입니다
+한꺼번에 도커에서 관리하면 실행 순서에 대한 문제 해결이 됩니다.
+```bash
+docker compose up -d
+```
 
 ---
 ❌ 문제 3: 환경마다 다르게 동작
@@ -192,74 +261,72 @@ EXPOSE 8000
 ```
 이 파일은 Django web과 Celery가 공통으로 사용할 수 있습니다.
 
+---
+docker-compose.yml 개념
+`docker-compose.yml` 파일은 여러 개의 컨테이너를 한 번에 실행하고 연결해주는 설정 파일입니다. 쉽게 설명하면 이 프로젝트에 필요한 서버들을 어떻게 띄울지 적어둔 실행 설명서입니다.
+
+이 파일이 하는 일
+- 어떤 컨테이너를 사용할지 정의합니다 (Django, Celery, FastAPI, Redis, DB)
+- 각 컨테이너를 어떤 포트로 실행할지 설정합니다
+- 컨테이너끼리 어떻게 연결할지 설정합니다
+- 환경변수(.env)를 어떻게 적용할지 지정합니다
+
 `backend/docker-compose.yml` : 이제 완전 컨테이너 구조로 수정합니다.
 ```yml
 version: "3.9"
 
 services:
+
+  # 1️⃣ DB 먼저 (가장 먼저 준비되어야 함)
   db:
     image: postgres:16
     container_name: product_review_postgres
     restart: always
     environment:
-      POSTGRES_DB: product_review_db
-      POSTGRES_USER: product_review_user
-      POSTGRES_PASSWORD: product_review_password
+      POSTGRES_DB: product_review_db        # DB 이름
+      POSTGRES_USER: product_review_user    # 사용자
+      POSTGRES_PASSWORD: product_review_password  # 비밀번호
     ports:
-      - "5433:5432"
+      - "5433:5432"                         # 외부5433 → 내부5432
     volumes:
-      - product_review_postgres_data:/var/lib/postgresql/data
+      - product_review_postgres_data:/var/lib/postgresql/data  # 데이터 저장
     networks:
       - app-network
 
+  # 2️⃣ Redis (Celery가 사용할 큐)
   redis:
     image: redis:7
     container_name: redis-server
     restart: always
     ports:
-      - "6379:6379"
+      - "6379:6379"                         # Redis 기본 포트
     networks:
       - app-network
 
+  # 3️⃣ Django (웹 서버)
   web:
     build: .
     container_name: drf-web
-    command: python manage.py runserver 0.0.0.0:8000
+    command: python manage.py runserver 0.0.0.0:8000  # 서버 실행
     restart: always
     volumes:
-      - .:/app
+      - .:/app                                # 코드 동기화
     ports:
       - "8000:8000"
     env_file:
-      - .env
+      - .env                                  # 환경변수 적용
     depends_on:
-      - db
-      - redis
+      - db                                    # DB 먼저 필요
+      - redis                                 # Redis 먼저 필요
     networks:
       - app-network
 
-  celery:
-    build: .
-    container_name: celery-worker
-    command: celery -A mysite worker --loglevel=info --pool=solo
-    restart: always
-    volumes:
-      - .:/app
-    env_file:
-      - .env
-    depends_on:
-      - db
-      - redis
-      - web
-      - fastapi
-    networks:
-      - app-network
-
+  # 4️⃣ FastAPI (AI 서버)
   fastapi:
     build:
       context: ../ai-server
     container_name: fastapi-server
-    command: uvicorn main:app --host 0.0.0.0 --port 8001
+    command: uvicorn main:app --host 0.0.0.0 --port 8001  # AI 서버 실행
     restart: always
     volumes:
       - ../ai-server:/app
@@ -268,19 +335,47 @@ services:
     networks:
       - app-network
 
+  # 5️⃣ Celery (가장 마지막, 모든 서비스 필요)
+  celery:
+    build: .
+    container_name: celery-worker
+    command: celery -A mysite worker --loglevel=info --pool=solo  # 작업 실행
+    restart: always
+    volumes:
+      - .:/app
+    env_file:
+      - .env
+    depends_on:
+      - db        # DB 필요
+      - redis     # 큐 필요
+      - web       # Django 필요
+      - fastapi   # AI 서버 필요
+    networks:
+      - app-network
+
+
+# 🔽 DB 데이터 영구 저장
 volumes:
   product_review_postgres_data:
 
+
+# 🔽 컨테이너끼리 통신하는 내부 네트워크
 networks:
   app-network:
     driver: bridge
 ```
-핵심 수정 포인트
-- `fastapi` 서비스 추가
-- `.env` 값이 Docker 내부 서비스명 기준으로 동작하도록 맞추기
-- DB host도 `127.0.0.1`이 아니라 `db`
-- Redis도 `redis`
-- FastAPI도 `fastapi`
+
+실행 흐름은 이렇게 보시면 됩니다
+```
+db → redis → web → fastapi → celery
+```
+특히 중요한 포인트
+- DB, Redis 먼저 준비
+- Django 실행
+- FastAPI 실행
+- 마지막에 Celery (모든 걸 사용하니까)
+의존성이 적은 것부터 먼저, 많이 의존하는 Celery는 마지막에 실행됩니다.
+
 ---
 `backend/.env` 수정
 ```
@@ -378,22 +473,20 @@ FastAPI 서버는 추론만 하면 되는데 Django, DRF, psycopg2까지 설치�
 
 혹시 가상환경이 확인결과 섞여 있다면 아래와 같이 현재 가상환경 위치를 확인하여 requirements.txt를 다시 설치해야 합니다.
 
-backend 쪽 확인
+backend 쪽 확인(가상환경 활성화 일때)
 ```bash
-cd ~/product-review-service/backend  
-pwd  
-which python  
-which pip  
-echo $VIRTUAL_ENV  
-ls -a
-```
+cd ~/product-review-service/backend  # backend 폴더로 이동
+pwd                                  # 현재 위치 경로 확인
+which python                         # 사용 중인 python 실행 경로 확인
+which pip                            # 사용 중인 pip 실행 경로 확인
+echo $VIRTUAL_ENV                    # 활성화된 가상환경 경로 확인
+# /home/youjung/product-review-service/backend/.venv
 
-예상결과 : 아래와 같이 나오면 정상입니다.
-```bash
-/home/youjung/product-review-service/backend
-/usr/bin/python
-/home/youjung/.local/bin/pip
+ls -a                                # 현재 폴더의 모든 파일(숨김파일 포함) 확인 (.venv 존재 여부 확인)
 ```
+비활성화 상태: 시스템 python
+활성화 상태: `.venv/bin/python`
+
 
 ai-server 쪽 확인 : 여기도 같은 방식으로 확인합니다.
 ```bash
@@ -405,13 +498,6 @@ echo $VIRTUAL_ENV
 ls -a
 ```
 
-예상결과
-```bash
-/home/youjung/product-review-service/ai-server
-/usr/bin/python
-/home/youjung/.local/bin/pip
-```
-
 먼저 활성화된 가상환경을 먼저 끄기
 ```bash
 deactivate
@@ -420,10 +506,15 @@ deactivate
 기존 가상환경 삭제
 이제 폴더별로 `.venv`를 지웁니다.
 ```bash
-# backend 가상환경 삭제
+# 가상환경이 켜져 있다면 종료  
+deactivate  
+  
+# backend 가상환경 삭제  
 cd ~/product-review-service/backend  
-rm -rf .venv
-
+rm -rf .venv  
+ls -a  
+  
+# ai-server 가상환경 삭제  
 cd ~/product-review-service/ai-server  
 rm -rf .venv
 ```
@@ -445,54 +536,7 @@ which python
 which pip
 ```
 
-FastAPI `ai-server/requirements.txt`  최종 정리
-```requirements
-fastapi
-uvicorn[standard]
-requests
-python-dotenv
-pydantic
-numpy
-scikit-learn
-sentence-transformers
-torch
-transformers
-```
-
-backend requirements 설치
-```bash
-cat requirements.txt
-
-uv pip install --upgrade pip 
-uv pip install -r requirements.txt
-```
-
-backend 설치 후 점검
-```bash
-python manage.py check
-```
-
-실행하여 최종 확인
-```bash
-python manage.py runserver
-```
-
----
-ai-server(FastAPI) 새 가상환경 만들기
-```bash
-deactivate
-
-cd ~/product-review-service/ai-server
-uv venv
-source .venv/bin/activate
-
-python --version  
-python -m pip --version  
-which python  
-which pip
-```
-
-Django `backend/requirements.txt` 최종 정리
+backend `backend/requirements.txt`  최종 정리
 ```requirements
 Django==6.0.3
 django-environ==0.13.0
@@ -531,22 +575,72 @@ packaging==26.0
 python-dateutil==2.9.0.post0
 six==1.17.0
 PyJWT==2.12.1
-django-environ==0.13.0
+pgvector==0.3.6
+beautifulsoup4
+lxml
+gunicorn
+boto3
+django-storages
+django-prometheus
 ```
 
-ai-server requirements 설치
+backend 순차적으로 실행하여 정검합니다.
 ```bash
-cat requirements.txt
-
-uv pip install --upgrade pip 
-uv pip install -r requirements.txt
+cat requirements.txt  
+uv pip install --upgrade pip  
+uv pip install -r requirements.txt  
+  
+python manage.py check  
+python manage.py runserver
 ```
 
-ai-server 설치 후 점검
+---
+ai-server(FastAPI) 새 가상환경 만들기
+```bash
+deactivate
+
+cd ~/product-review-service/ai-server
+uv venv
+source .venv/bin/activate
+
+python --version  
+python -m pip --version  
+which python  
+which pip
+```
+
+FastAPI `ai-server/requirements.txt`  최종 정리
+```requirements
+fastapi
+uvicorn[standard]
+requests
+python-dotenv
+pydantic
+numpy
+scikit-learn
+sentence-transformers
+torch
+transformers
+```
+
+FastAPI 순차적으로 실행하여 정검합니다.
+```bash
+cat requirements.txt  
+uv pip install --upgrade pip  
+uv pip install -r requirements.txt  
+```
+
+API 동작 확인
 ```bash
 uvicorn main:app --reload --port 8001
+
+# 브라우저에서 주소를 넣어서 확인
+http://127.0.0.1:8001/docs
 ```
+
 ---
+### Docker가 갑자기 안 될 때만 확인해보는 과정입니다.
+
 ✅ 1. 컨테이너가 떠 있는지 확인 (가장 중요)
 
 Windows PowerShell 또는 CMD 관리자 권한으로 실행 
@@ -573,15 +667,36 @@ Docker Compose version v2.29.2
 ```
 이게 나와야 정상
 
+----
 프로젝트 폴더 이동 후 컨테이너로 실행
 ```bash
 cd ~/product-review-service/backend
+docker compose up -d # docker-compose.yml에 정의된 모든 서비스가 한 번에 생성
+```
+- db
+- redis
+- web (Django)
+- fastapi
+- celery 총 5개 컨테이너가 생성됩니다
+```bash
 docker compose up -d
 ```
+실행하면 내부적으로:
+1. 이미지 build
+2. 컨테이너 생성
+3. 컨테이너 실행
 
-그리고 상태 확인:
+도커 상태 확인:
 ```bash
 docker ps
+```
+결과
+```
+drf-web  
+celery-worker  
+fastapi-server  
+redis-server  
+product_review_postgres
 ```
 
 Celery 에러 로그 보기
@@ -594,6 +709,9 @@ web 로그도 확인
 ```bash
 docker exec -it drf-web env | grep DB
 ```
+
+중요) 빌드의 위치는 `docker-compose.yml` 파일이 있는 위치의 경로여야 합니다.
+우리 프로젝트는 `backend/docker-compose.yml` 파일이 있으므로 반드시 경로를 `cd backend` 로 변경후 `build` 명령어를 적용해야 합니다.
 
 혹시 파일을 수정했을경우에는 반드시 다시 컨테이너에 재빌드를 해줘야 합니다
 ```bash
@@ -649,7 +767,7 @@ Docker 단계 이후에는 실행 환경이 더 엄격해 집니다.
 - 그런데 상단 import면 danawa만 돌려도 hwahae import가 실행됨
 - 그래서 hwahae 패키지 오류가 danawa까지 막아버림
 
-행 구조에 맞게 “import 방식”은 바꿨어야 합니다.
+행 구조에 맞게 import 방식은 바꿨어야 합니다.
 - 실행 안정성
 - 의존성 분리
 - 사이트별 독립성
@@ -695,3 +813,319 @@ def crawl_product_review_target(target, review_limit: int = 20) -> dict:
 
 즉 지연 import(lazy import)로 바꿔야 합니다.
 다시 말해서 12번 단계에서는 사이트별 collector를 상단 import해도 큰 문제가 없었지만, 19번 이후 Docker 기반 멀티서비스 환경으로 전환되면서 특정 collector의 의존성 문제가 전체 크롤링 명령을 막을 수 있었습니다. 이를 방지하기 위해 `crawl_service.py`에서 사이트별 collector를 함수 내부에서 지연 import하도록 수정하였습니다.
+
+---
+### Docker로 넘어가면 필수 운영 가이드
+
+(1) 기본 위치
+항상 먼저 여기로 이동:
+```bash
+cd ~/product-review-service/backend
+```
+왜냐하면 docker-compose.yml파일이 backend안에 있기 때문입니다.
+
+---
+(2) 컨테이너 실행 / 재빌드
+
+기존 실행명령어는 아래와 같았지만
+```bash
+python manage.py runserver
+
+uvicorn main:app --reload --port 8001
+```
+
+앞으로 실행 명령어는 이렇게 바뀝니다.
+```bash
+docker compose up -d
+```
+
+코드/패키지/Dockerfile등이 변경되면 항상 빌드를 해줘야 합니다.
+```bash
+docker compose up -d --build
+```
+
+상태 확인:
+```bash
+docker compose ps
+```
+
+로그 보기:
+```bash
+docker compose logs -f web  
+docker compose logs -f celery  
+docker compose logs -f fastapi  
+docker compose logs -f redis  
+docker compose logs -f db
+```
+
+---
+(3) Django 명령어 전부 교체
+Docker 환경에서는 모든 Django 명령을 컨테이너 내부에서 실행합니다 
+
+예를 들어
+❌ 잘못된 방식 (로컬)
+```bash
+python manage.py migrate
+```
+
+⭕ 올바른 방식 (Docker)
+```bash
+docker compose exec web python manage.py migrate
+```
+
+##### Django 명령어 실행 방식 (전체 변경)
+| 기존 (로컬)                          | Docker 방식                                                        |
+| -------------------------------- | ---------------------------------------------------------------- |
+| python manage.py check           | docker compose exec web python manage.py check                   |
+| python manage.py shell           | docker compose exec web python manage.py shell                   |
+| python manage.py migrate         | docker compose exec web python manage.py migrate                 |
+| python manage.py makemigrations  | docker compose exec web python manage.py makemigrations          |
+| python manage.py showmigrations  | docker compose exec web python manage.py showmigrations          |
+| python manage.py createsuperuser | docker compose exec web python manage.py createsuperuser         |
+| python manage.py collectstatic   | docker compose exec web python manage.py collectstatic --noinput |
+
+크롤링 명령어 실행 방식
+```
+docker compose exec web python manage.py test_crawl  
+docker compose exec web python manage.py scheduled_crawl --limit 3
+```
+
+---
+### 자주 사용하는 관리 명령어
+
+관리자 생성  
+```bash
+docker compose exec web python manage.py createsuperuser  
+```
+  
+Django shell  
+```bash
+docker compose exec web python manage.py shell
+```  
+  
+앱 상태 체크  
+```bash
+docker compose exec web python manage.py check 
+``` 
+  
+마이그레이션  
+```bash
+docker compose exec web python manage.py makemigrations  
+docker compose exec web python manage.py migrate
+```
+
+---
+PostgreSQL 접속 (Docker 기준)
+
+docker compose 기준  
+```bash
+docker compose exec db psql -U product_user -d product_db 
+``` 
+  
+컨테이너 이름 직접 사용  
+```bash
+docker exec -it product_review_postgres psql -U product_user -d product_db
+```
+
+---
+### 서비스 로그 확인
+
+Celery 로그  
+```bash
+docker compose logs -f celery  
+```
+  
+FastAPI 로그  
+```bash
+docker compose logs -f fastapi
+```  
+  
+Redis 로그  
+```bash
+docker compose logs -f redis
+```
+
+---
+### 운영 원칙 (중요)
+앞으로 작업 방식은 아래처럼 통일합니다
+- 코드 수정 → VSCode
+- 서버 실행 → Docker
+- Django 명령 → Docker
+- 크롤링 테스트 → Docker
+- 관리자 생성 → Docker
+
+즉,
+❌ 로컬 실행 금지
+```
+python manage.py runserver  
+python manage.py migrate
+```
+
+⭕ Docker 기준으로만 실행
+
+---
+### 편의성 향상 (alias 설정)
+
+alias는 명령어를 줄여서 쓰는 별명입니다
+원래 명령어: 너무 김 ❌
+```bash
+docker compose exec web python manage.py migrate
+```
+
+alias를 쓰면: 짧고 편함 ⭕
+```bash
+dj migrate
+```
+
+그래서 이 코드 의미 
+```bash
+alias dc='docker compose'  
+alias dj='docker compose exec web python manage.py'  
+alias dlog='docker compose logs -f'
+```
+
+앞으로는 아래와 같이 사용하겠다는 의미입니다.
+```bash
+dc up -d 
+```
+아래와 같은 의미
+```bash
+docker compose up -d
+```
+
+적용: 바로 적용됨 (재부팅 필요 없음)
+```bash
+source ~/.bashrc
+```
+
+적용되면 바로 이렇게 사용할수 있습니다.
+```bash
+dc up -d # 서버 실행  
+dj migrate # DB 적용  
+dj createsuperuser # 관리자 생성  
+dlog web # 로그 확인
+```
+
+(실무 최소 alias 추천)
+```bash
+# dc (도커 실행/관리)
+dc up -d  
+dc down  
+dc ps  
+dc up -d --build
+
+# dj (Django 명령 전용)
+dj migrate  
+dj makemigrations  
+dj createsuperuser  
+dj shell  
+dj check
+
+# dlog (로그 확인) 디버깅할 때 필수
+dlog web  
+dlog celery  
+dlog fastapi  
+dlog redis
+```
+---
+superuser 생성 (최종 명령)
+```bash
+cd ~/product-review-service/backend  
+docker compose exec web python manage.py createsuperuser
+```
+---
+### 1️⃣ 반드시 rebuild 해야 하는 경우
+
+① requirements.txt 변경
+```
+redis 추가  
+torch 버전 변경
+```
+이유:  
+Docker는 빌드할 때만 pip install 실행됨
+
+실행:
+```bash
+dc up -d --build
+```
+---
+② Dockerfile 변경
+```
+RUN apt-get install ...  
+ENV ...
+```
+이유:  
+이미지 자체가 바뀜
+
+---
+③ docker-compose.yml 변경
+```yml
+ports:  
+environment:  
+depends_on:
+```
+이유:  
+컨테이너 설정이 바뀜
+
+---
+④ .env (환경변수) 변경
+```
+DB_HOST=...  
+FASTAPI_BASE_URL=...
+```
+이유:  
+컨테이너 실행 환경이 바뀜
+
+---
+### 2️⃣ rebuild 안 해도 되는 경우
+
+① Python 코드 수정
+```
+views.py  
+tasks.py  
+services.py
+```
+이유:
+- 볼륨 마운트 되어 있음
+- 바로 반영됨
+
+---
+② HTML / JS / CSS 수정
+```
+templates/  
+static/
+```
+바로 반영 ⭕
+
+---
+③ Django 로직 변경
+```
+serializer.py  
+model 로직
+```
+rebuild 필요 없음
+
+---
+⚠️ 예외 (헷갈리는 부분)
+
+❗ 모델 변경 + 마이그레이션
+```
+dj makemigrations  
+dj migrate
+```
+rebuild ❌  
+DB 작업만 하면 됨
+
+---
+🔥 실무 기준 판단법 (진짜 중요)
+
+이렇게 생각하면 100% 맞습니다:
+```
+pip install이 필요하면 → rebuild 즉 requirements.txt 건드림 → rebuild 
+서버 설정 바뀌면 → rebuild  
+그 외 → rebuild 필요 없음
+```
+
+---
+한 줄 핵심
+설치/환경 바뀌면 rebuild, 코드만 바뀌면 그냥 실행

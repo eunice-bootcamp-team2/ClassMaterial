@@ -85,14 +85,15 @@ socket.onmessage = function (event) {
 3. backend/static/js/product-detail.js: 기존 폴링(Polling) 대신 웹소켓 연결 로직으로 교체
 4. ai-server/requirements.txt: 비동기 Redis 라이브러리 추가 (`redis` 패키지)
 
-설치패키지
+requirements.txt : 만약 현재 ai-server에 redis가 없다면
 ```bash
-uv pip install redis
+redis
 ```
+직접 추가 
 
-`requirements.txt` 갱신
-```
-uv pip freeze > requirements.txt
+그리고 Docker 재빌드
+```bash
+dc up -d --build
 ```
 
 `ai-server/main.py`
@@ -933,3 +934,16 @@ WebSocket
 ```
 끝나는 순간 바로 전달
 ```
+---
+### Celery Beat (스케줄링)
+
+Celery 스케줄링(Celery Beat)은
+> 정해진 시간이나 주기에 따라 비동기 작업(Celery task)을 자동으로 실행해주는 기능입니다.
+
+- 5분마다 크롤링
+- 매일 밤 데이터 정리
+- 1시간마다 AI 재분석
+
+✔ 사용자 요청 없이 자동 실행  
+✔ 주기적/예약 작업 가능  
+✔ 백그라운드에서 동작 하는 기능입니다.

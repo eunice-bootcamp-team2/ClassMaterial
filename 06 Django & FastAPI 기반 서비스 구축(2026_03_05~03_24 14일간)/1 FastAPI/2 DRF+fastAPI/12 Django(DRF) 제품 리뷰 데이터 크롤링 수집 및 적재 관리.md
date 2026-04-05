@@ -1,6 +1,229 @@
+우리가 앞전에 배운 크롤링 방식은 html을 분석한 맞춤형 크로링 방식을 배웠습니다. 이번에 넣은 크롤링 방식은 자동 크롤링 방식으로 원하는 데이터를 수집해보겠습니다.
+
+자동 크롤링과 맞춤 크롤링의 차이
+현재 우리가 시도하려고 하는 구조는 자동 크롤링 시스템의 뼈대를 배우기 위한 방식입니다.
+
+즉, 어떤 주소를 수집할지 저장하고, 주기적으로 실행하고, 수집 결과를 저장하고, 성공/실패 로그를 남기는 구조를 익히는 것이 핵심입니다.  
+하지만 이 구조만으로 모든 사이트의 리뷰를 높은 품질로 정확하게 수집할 수 있는 것은 아닙니다.
+
+### `1.` 자동 크롤링
+
+자동 크롤링은 여러 사이트나 여러 주소를 공통 구조로 관리하고 주기적으로 수집하는 방식입니다.  
+예를 들어 대상 URL을 DB에 저장하고, 스케줄러가 일정 시간마다 실행되어, 활성화된 주소를 골라 수집한 뒤 결과를 저장하는 방식입니다. 이 문서의 `CrawlTarget`, `scheduled_crawl`, `crawl_service`, `CrawlJobLog` 구조가 여기에 해당합니다.
+
+장점:
+- 주소 추가/비활성화가 쉽다
+- 수집 대상 관리가 편하다
+- 정기 실행이 가능하다
+- 로그와 저장 구조를 통일할 수 있다
+- 운영 자동화에 유리하다
+
+단점:
+- 사이트마다 HTML 구조가 다르면 공통 로직만으로는 정확도가 떨어진다
+- 자바스크립트로 로딩되는 리뷰 영역은 잘 수집되지 않을 수 있다
+- 리뷰 탭 클릭, 더보기, 스크롤 같은 동작이 필요한 사이트는 대응이 어렵다
+- 공통화가 강할수록 실제 리뷰 수집 품질은 낮아질 수 있다
+
+즉, 자동 크롤링은 운영 효율은 좋지만, 리뷰 수집 정확도는 사이트별 구조에 따라 한계가 있습니다.
+
+### `2.` 맞춤 크롤링
+
+맞춤 크롤링은 특정 사이트의 구조를 분석해서 그 사이트 전용으로 수집 로직을 따로 만드는 방식입니다.  
+예를 들어 리뷰 탭을 클릭하고, 일정 시간 대기하고, 스크롤을 내려 추가 리뷰를 불러오고, 리뷰 본문 selector를 정확히 지정해서 수집하는 식입니다. 문서에서도 화해 쪽은 상품 페이지 HTML 확보 이후 리뷰 영역 selector 찾기, 리뷰 탭 클릭, 리뷰 텍스트 확인 같은 다음 단계가 필요하다고 설명하고 있습니다.
+
+장점:
+- 특정 사이트에서 높은 정확도를 기대할 수 있다
+- 리뷰 본문, 평점, 날짜, 작성자 등 세부 정보 추출에 유리하다
+- 동적 페이지에도 대응 가능하다
+- 실제 서비스 수준의 품질을 얻기 쉽다
+
+단점:
+- 사이트 하나마다 코드를 따로 손봐야 한다
+- 구조가 바뀌면 유지보수 비용이 크다
+- 사이트 수가 많아질수록 관리가 어려워진다
+- 구현 시간이 더 오래 걸린다
+
+즉, 맞춤 크롤링은 정확도는 높지만, 확장성과 유지보수 비용이 큽니다.
+
+결론
+- 자동 크롤링은 대상을 관리하고 주기적으로 돌리는 시스템
+- 맞춤 크롤링은 특정 사이트에서 리뷰를 정확히 뽑아내는 전용 수집기
+
+실무에서는 둘 중 하나만 쓰기보다,  
+자동 크롤링 시스템 위에 사이트별 맞춤 collector를 붙이는 방식으로 함께 사용합니다.  
+즉, 자동화는 운영 틀, 맞춤화는 수집 품질을 담당합니다.
+
+---
+### `3.`  가장 중요한 부분은 크롤링의 70%는 좋은 사이트 찾기입니다. 코드보다 이단계가 더 오래 걸리는게 정상입니다.
+
+사이트를 찾을 때 무작정 검색하지 말고 아래 4가지를 먼저 체크하세요.
+
+✅ 1) HTML에 데이터가 있는가? (핵심)
+- 우클릭 → 페이지 소스 보기
+- 리뷰 텍스트가 보이면 👍 (BeautifulSoup 가능)
+- 안 보이면 ❌ (JS 렌더링 → Selenium 필요)
+👉 가장 중요한 기준입니다
+
+---
+✅ 2) URL 구조가 단순한가?
+
+좋은 예:
+```
+/product/123  
+/product/124
+```
+
+나쁜 예:
+```
+/product?token=asdflkjasdf&type=abc&page=1&random=...
+```
+👉 URL 패턴이 있어야 자동화 가능
+
+---
+✅ 3) robots.txt 허용 여부
+```
+https://사이트/robots.txt
+```
+
+- Allow → 가능
+- Disallow → ❌ 
+
+---
+✅ 4) 로그인 / 쿠키 필요한가?
+- 로그인 필요 → 난이도 ↑↑
+- 비로그인 가능 → 👍
+
+---
+### `4.` 실제 사이트 찾는 검색 전략 (핵심)
+
+그냥 크롤링 사이트 검색하면 절대 안 나옵니다.  
+👉 데이터 관점으로 검색해야 합니다
+
+---
+전략 1: 리뷰 데이터 키워드 검색
+제품명 + 리뷰  
+화장품 리뷰 사이트  
+노트북 리뷰 사이트" 
+상품 비교 사이트
+
+예:
+- 화장품 리뷰 사이트
+- 전자제품 리뷰 사이트
+
+---
+전략 2: 랭킹 / 비교 / 추천 사이트 찾기
+
+이게 크롤링 최적 사이트입니다.
+화장품 순위  
+베스트 제품 추천" 
+상품 비교 사이트
+
+이유:
+- 구조가 규칙적
+- 데이터가 정리되어 있음
+- 크롤링 쉬움
+
+---
+전략 3: 커뮤니티보다 플랫폼 찾기
+
+❌ 나쁜 선택:
+- 블로그
+- 카페
+- 인스타
+구조가 다 다름 (크롤링 지옥)
+
+✅ 좋은 선택:
+- 리뷰 플랫폼
+- 쇼핑몰
+- 랭킹 사이트
+
+---
+전략 4: 영어로 검색 (강추)
+```
+product review site  
+cosmetics review platform" 
+electronics review dataset
+```
+한국보다 구조 잘 되어 있음
+
+---
+### `5.` 좋은 사이트 vs 나쁜 사이트
+
+좋은 사이트 (크롤링 쉬움)
+- 리스트 페이지 있음
+- URL 규칙 있음
+- HTML에 데이터 있음
+- 로그인 필요 없음
+
+예:
+- 상품 비교 사이트
+- 랭킹 사이트
+- 쇼핑몰 일부
+
+
+❌ 나쁜 사이트 (크롤링 어려움)
+- React / Vue 기반 SPA
+- infinite scroll
+- 로그인 필요
+- robots 차단
+
+예:
+- SNS
+- 일부 리뷰 플랫폼
+
+---
+### `6.` 현실적인 추천 전략 (중요)
+
+`단계 1`
+크롤링 쉬운 사이트 1개 먼저 성공
+- BeautifulSoup만으로 가능
+- HTML에 데이터 있음
+- 구조 단순
+
+이유:
+- 성공 경험 확보
+- 전체 흐름 이해
+
+
+`단계 2`
+Selenium 필요한 사이트 1개
+- 리뷰 탭 클릭
+- 대기
+- selector 추출
+
+
+`단계 3`
+자동화 구조 + 맞춤 collector 결합
+
+---
+### `7.` 진짜 실무 팁
+
+크롤링 잘하는 사람 특징:
+👉 코드 잘 짜는 사람 ❌  
+👉 사이트 구조 빨리 판단하는 사람 ✅
+
+---
+빠른 판단 방법
+1. 개발자 도구 열기 (F12)
+2. 리뷰 클릭
+3. HTML 확인
+
+바로 결정:
+- 보인다 → BeautifulSoup
+- 안 보인다 → Selenium
+- 클릭 필요 → 맞춤 크롤링
+
+---
+최종 결론
+✔ 사이트 찾는 시간 오래 걸리는 게 정상  
+✔ 자동화보다 사이트 선택이 더 중요  
+✔ 좋은 사이트 = 크롤링 난이도 ↓  
+✔ 나쁜 사이트 = 코드 아무리 잘 짜도 실패
+
+---
 크롤러 파이썬 코드 + DB + 스케줄러 + Django/DRF
 
-### 전체 흐름
+전체 흐름
 1. 크롤링할 URL 목록을 저장
 2. 스케줄러가 1시간마다 실행
 3. 크롤러가 URL 10개만 골라서 수집
@@ -18,17 +241,167 @@
 - 우선은 페이지 접근 + 상품 링크 후보 추출까지만 구현
 - 나중에 리뷰 본문 추출로 확장
 ---
+자동 크롤링에는 보통 이 4개가 필요합니다.
+1. 무엇을 돌릴지 관리하는 대상 목록
+2. 주기적으로 실행하는 스케줄러
+3. 가져온 데이터를 저장하거나 갱신하는 로직
+4. 실패/성공을 남기는 로그
+---
+전체 구조(각 파일의 역할)
+```
+apps/crawling/
+
+├── collectors/  
+│   ├── danawa_collector.py        
+│   │   → [실제 크롤링 로직] (데이터 수집 담당)
+│   │   → HTML에서 "리뷰" 또는 "상품 데이터" 추출
+│   │
+│   ├── hwahae_collector.py        
+│   │   → [실제 크롤링 로직]
+│   │
+│   └── glowpick_collector.py      
+│       → [실제 크롤링 로직]
+
+├── services/
+│   ├── http.py                    
+│   │   → [크롤링 공통 기능]
+│   │   → 요청(requests), 헤더, timeout 관리
+│   │
+│   ├── parser.py                  
+│   │   → [크롤링 공통 기능]
+│   │   → HTML → 데이터 변환 (BeautifulSoup)
+│   │
+│   ├── crawl_service.py           
+│   │   → ⭐ [자동 크롤링 흐름 제어]
+│   │   → collector 선택 + 전체 실행 orchestration
+│   │
+│   ├── save_service.py            
+│   │   → ⭐ ③ 저장/갱신 로직
+│   │   → create / update / 중복 방지(unique_key)
+│   │
+│   ├── repository.py              
+│   │   → ③ 저장/갱신 로직 (DB 직접 접근)
+│   │   → update_or_create 전용
+│   │
+│   └── target_selector.py         
+│       → ⭐ ① 대상 선택 로직
+│       → 어떤 URL을 이번에 돌릴지 결정 (limit, priority)
+
+├── management/
+│   └── commands/
+│       ├── test_crawl.py          
+│       │   → 수동 테스트용 실행
+│       │
+│       └── scheduled_crawl.py     
+│           → ⭐ ② 스케줄러 실행 진입점
+│           → cron / celery beat에서 호출
+
+├── models.py                      
+│
+│   → ⭐ ① 대상 목록 관리
+│   → CrawlTarget (크롤링 대상 URL 관리)
+│
+│   → ⭐ ③ 저장 데이터 구조
+│   → CrawlRawData (크롤링 결과 저장)
+│
+│   → ⭐ ④ 로그 관리
+│   → CrawlJobLog (성공/실패 기록)
+
+├── admin.py                       
+│   → 관리자에서 대상 / 결과 / 로그 확인
+
+└── tests.py                       
+    → 저장 로직 / 중복 방지 테스트
+```
+
+---
+### 4요소 기준 매핑
+
+① 무엇을 돌릴지 관리 (Target : 대상 선택 로직)
+```
+models.py
+  └── CrawlTarget
+services/target_selector.py
+```
+역할
+- 크롤링 대상 URL 저장
+- 어떤걸 이번에 실행할지 선택
+
+② 주기적으로 실행 (Scheduler)
+```
+management/commands/scheduled_crawl.py
+```
+역할
+- cron / celery beat가 실행
+- 자동으로 크롤링 시작
+
+③ 데이터 저장 / 갱신
+```
+services/save_service.py  
+services/repository.py  
+models.py (CrawlRawData)
+```
+역할
+- 크롤링 결과 DB 저장
+- 중복이면 update
+- 새 데이터면 create
+
+④ 로그 기록
+```
+models.py (CrawlJobLog)  
+management/commands/*.py
+```
+역할
+- 성공/실패 기록
+- 몇 개 처리했는지
+- 에러 메시지 저장
+
+크롤링 흐름 (자동 크롤링 실제 동작)
+```
+cron
+  ↓
+scheduled_crawl.py   ← ②
+  ↓
+target_selector.py   ← ①
+  ↓
+crawl_service.py
+  ↓
+collector (사이트별)
+  ↓
+save_service.py      ← ③
+  ↓
+repository.py
+  ↓
+DB 저장
+  ↓
+CrawlJobLog 기록     ← ④
+```
+
+| 역할       | 파일                                                 |
+| -------- | -------------------------------------------------- |
+| ① 대상 관리  | `models.py (CrawlTarget)`, `target_selector.py`    |
+| ② 스케줄 실행 | `scheduled_crawl.py`                               |
+| ③ 저장/갱신  | `save_service.py`, `repository.py`, `CrawlRawData` |
+| ④ 로그     | `CrawlJobLog`, `scheduled_crawl.py`                |
+
+즉 정리하면 자동 크롤링을 만들려면 크롤링보다 4가지 구조가 더 중요합니다.
+- 대상 관리 없으면 → 자동화 불가능
+- 스케줄러 없으면 → 수동 작업
+- 저장 로직 없으면 → 데이터 쓰레기됨
+- 로그 없으면 → 장애 대응 불가능
+
+---
 ### 1단계: 수동 크롤링 사이트 확보 및 환경설정
 - 공개 데이터셋으로 모델 파이프라인 먼저 완성
 - 공식 API로 상품 후보 수집
 - 허용 범위가 분명한 소스만 제한적으로 수집
 
-크로링 사이트
+크롤링 사이트
 [다나와](https://search.danawa.com/dsearch.php?addDelivery=N&boost=true&checkedInfo=N&coupangMemberSort=N&defaultPhysicsCategoryCode=9875%7C36916%7C36932%7C0&defaultUICategoryCode=18255394&defaultVaTab=116291&defaultVmTab=7188&isZeroPrice=Y&limit=40&list=list&originalQuery=%EC%88%98%EB%B6%84%ED%81%AC%EB%A6%BC&page=1&priceUnitSort=Y&priceUnitSortOrder=A&query=%EC%88%98%EB%B6%84%ED%81%AC%EB%A6%BC&quickProductYN=N&recommendedSort=N&simpleDescOpen=Y&sort=saveDESC&tab=main&volumeType=va)
 [화해화장품](https://www.hwahae.co.kr/search?q=%EC%88%98%EB%B6%84%ED%81%AC%EB%A6%BC&type=goods)
 [글로우픽](https://glowpick.co.kr/ranking/search/%EC%88%98%EB%B6%84%ED%81%AC%EB%A6%BC)
 
-크로링 전용 앱생성
+크롤링 전용 앱생성
 ```bash
 python manage.py startapp crawling apps/crawling
 ```
@@ -44,7 +417,7 @@ backend/
         ├── migrations/
         ├── admin.py
         ├── apps.py
-        ├── models.py
+        ├── models.py   # ① 대상 관리
         ├── tests.py
         └── views.py
 ```
@@ -59,28 +432,28 @@ INSTALLED_APPS = [
 
 crawling 앱 디렉토리 확장
 ```bash
-mkdir -p apps/crawling/management/commands
-mkdir -p apps/crawling/services
-mkdir -p apps/crawling/collectors
+mkdir -p crawling/management/commands
+mkdir -p crawling/services
+mkdir -p crawling/collectors
 
-touch apps/crawling/management/__init__.py
-touch apps/crawling/management/commands/__init__.py
-touch apps/crawling/services/__init__.py
-touch apps/crawling/collectors/__init__.py
-touch apps/crawling/services/http.py
-touch apps/crawling/services/parser.py
-touch apps/crawling/services/crawl_service.py
-touch apps/crawling/management/commands/test_crawl.py
+touch crawling/management/__init__.py
+touch crawling/management/commands/__init__.py
+touch crawling/services/__init__.py
+touch crawling/collectors/__init__.py
+touch crawling/services/http.py
+touch crawling/services/parser.py
+touch crawling/services/crawl_service.py
+touch crawling/management/commands/test_crawl.py
 ```
 
-최종 구조
+최종 구조 : ③ 수집 + 저장 흐름 (초기 버전)
 ```
 apps/crawling/
 ├── migrations/
 ├── management/
 │   └── commands/
 │       └── test_crawl.py
-├── collectors/          ← 사이트별 크롤러 (3단계 핵심)
+├── collectors/          ← 실제 크롤링
 │   └── __init__.py
 ├── services/
 │   ├── __init__.py
@@ -93,8 +466,10 @@ apps/crawling/
 ├── models.py
 └── tests.py
 ```
+데이터를 어떻게 가져오고 처리할지 만드는 단계
 
-웹크로링에 필요한 라이브러리 설치
+
+웹크롤링에 필요한 라이브러리 설치
 ```bash
 uv pip install beautifulsoup4 lxml requests
 ```
@@ -105,11 +480,23 @@ uv pip freeze > requirements.txt
 ```
 ---
 ### 2단계: DB 테이블 구조 만들기
-A. 크롤링 대상 링크 테이블
-B. 수집 데이터 테이블
-C. 실행 로그 테이블
 
 `apps/crawling/models.py`
+
+- `CrawlTarget`
+    - 크롤링할 URL 목록을 저장하는 역할
+    - 어떤 사이트를 돌릴지, search인지 product인지, active 상태인지 관리
+- 즉, 자동 크롤링의 대상 관리에 해당합니다.
+
+- `CrawlRawData`
+    - 수집한 원본 데이터 저장
+- 즉, 저장 대상 테이블 역할입니다.
+
+- `CrawlJobLog`
+    - 성공/실패, 처리 건수, 시작/종료 시간, 메시지 저장
+- 즉, 실행 로그 저장소입니다.
+
+### 1 `apps/crawling/models.py`
 ```python
 from django.db import models
 
@@ -301,6 +688,14 @@ class CrawlJobLog(models.Model):
     def __str__(self):
         return f"{self.site} | {self.status} | {self.started_at}"
 ```
+---
+`apps/crawling/admin.py`
+
+- 대상 목록(`CrawlTarget`)
+- 수집 데이터(`CrawlRawData`)
+- 실행 로그(`CrawlJobLog`)  
+    를 관리자 화면에서 확인하게 해주는 파일
+- 즉, 운영/확인용 화면 연결 역할입니다
 
 `apps/crawling/admin.py`
 ```python
@@ -356,6 +751,11 @@ class CrawlJobLogAdmin(admin.ModelAdmin):
     search_fields = ("site", "message")
     ordering = ("-started_at",)
 ```
+---
+`apps/crawling/apps.py`
+
+- Django에 `apps.crawling` 앱을 등록하는 설정 파일
+- 즉, 앱 기본 설정 역할입니다.
 
 `apps/crawling/apps.py`
 ```python
@@ -365,7 +765,6 @@ class CrawlingConfig(AppConfig):
     default_auto_field = "django.db.models.BigAutoField"
     name = "apps.crawling"
 ```
-
 
 마이그레이션
 ```bash
@@ -416,6 +815,13 @@ print("등록 완료")
 ```
 정상적으로 나오면 `exit()` 로 빠져나옵니다.
 
+---
+③ 가져온 데이터를 저장하거나 갱신하는 로직
+
+`apps/crawling/services/http.py`
+
+- 웹페이지에 요청을 보내서 HTML을 가져오는 역할
+- 즉, 저장 전 단계인 **수집 입력부**입니다.
 
 HTTP 요청 서비스 작성
 `apps/crawling/services/http.py`
@@ -442,10 +848,17 @@ def fetch_page(url: str, timeout: int = 15) -> requests.Response:
     response.raise_for_status()
     return response
 ```
-
+---
 파서 작성
+`apps/crawling/services/parser.py`
+
+- 가져온 HTML을 분석해서
+    - 페이지 정보 추출
+    - 상품 상세 링크 후보 추출
+- 즉, 수집 데이터 가공/추출 역할입니다.
+
 지금은 1차 테스트이기 때문에  
-“상품 상세 링크 후보를 찾는 것”까지만 구현합니다.
+상품 상세 링크 후보를 찾는 것까지만 구현합니다.
 `apps/crawling/services/parser.py`
 ```python
 from bs4 import BeautifulSoup
@@ -519,6 +932,11 @@ def extract_candidate_links(site: str, base_url: str, html: str) -> list[dict]:
 
     return unique_items
 ```
+---
+`apps/crawling/services/crawl_service.py`
+
+- 요청 → 파싱 → DB 저장 → 마지막 실행시간 갱신까지 연결
+- 즉, 전체 크롤링 실행 흐름 + 저장 처리의 중심 역할입니다.
 
 크롤링 서비스 작성
 `apps/crawling/services/crawl_service.py`
@@ -585,6 +1003,12 @@ def crawl_search_target(target):
         "candidate_count": len(candidate_links),
     }
 ```
+---
+`apps/crawling/management/commands/test_crawl.py`
+
+- 실행하면서 성공/실패를 세고
+- 마지막에 `CrawlJobLog`에 결과 저장
+- 즉, 로그를 실제로 남기는 실행 파일입니다.
 
 management command 작성
 `apps/crawling/management/commands/test_crawl.py`
@@ -836,8 +1260,9 @@ apps/crawling/
 └── admin.py                          # Django Admin 등록
 ```
 
-추가 생성할 파일
+### 추가 생성할 파일
 ```bash
+mkdir -p apps/crawling/collectors
 touch apps/crawling/collectors/danawa_collector.py
 touch apps/crawling/collectors/hwahae_collector.py
 touch apps/crawling/collectors/glowpick_collector.py
@@ -1347,12 +1772,41 @@ apps/crawling/
 └── tests.py                 # [4단계 추가] 중복 저장 방지 테스트
 ```
 
-파일 생성
+3단계
+```
+CrawlRawData.objects.create()  
+→ 매번 새로 저장됨  
+→ 중복 데이터 계속 쌓임 ❌  
+→ 운영하면 DB 터짐
+```
+4단계에서 바뀐것
+```
+update_or_create (upsert)  
+→ 있으면 UPDATE  
+→ 없으면 CREATE
+```
+✔ 중복 방지  
+✔ 데이터 최신 상태 유지  
+✔ 실서비스 가능 구조
+
+### 파일 생성 여기까지 테스트
 ```bash
 touch apps/crawling/services/repository.py
 ```
 
-`apps/crawling/models.py`
+파일별 처리흐름
+```
+test_crawl.py  
+→ crawl_service.py  
+→ 사이트별 collector  
+→ parser.py / http.py  
+→ save_service.py  
+→ repository.py  
+→ DB 저장
+```
+
+### 2`apps/crawling/models.py` : record_type, unique_key가 추가
+데이터 종류를 구분하고 중복 저장을 막을 수 있게 바뀌었습니다.
 ```python
 from django.db import models
 
@@ -1495,6 +1949,11 @@ class CrawlRawData(models.Model):
         blank=True,
         null=False,
     )
+    # 데이터 식별자 (PK처럼 사용)
+    # 같은 데이터인지 판단 기준
+    # 이 데이터 이미 있냐? 판단 기준
+    
+    
     # [4단계 추가 끝]
 
     crawled_at = models.DateTimeField(
@@ -1575,6 +2034,8 @@ class CrawlJobLog(models.Model):
 ```
 
 `apps/crawling/admin.py`
+관리자 페이지에서 크롤링 대상, 수집 데이터, 실행 로그를 보기 쉽게 확인하는 파일입니다.  
+4단계에서는 `record_type`, `unique_key`도 보이도록 수정되어 중복 여부와 데이터 종류를 확인할 수 있게 되었습니다
 ```python
 from django.contrib import admin
 from .models import CrawlTarget, CrawlRawData, CrawlJobLog
@@ -1631,7 +2092,7 @@ class CrawlJobLogAdmin(admin.ModelAdmin):
     ordering = ("-started_at",)
 ```
 
-`apps/crawling/services/parser.py`
+`apps/crawling/services/parser.py` 수정없음
 ```python
 from bs4 import BeautifulSoup
 
@@ -1662,7 +2123,7 @@ def extract_page_info(html: str) -> dict:
 # [4단계에서는 parser 수정 없음]
 ```
 
-`apps/crawling/collectors/danawa_collector.py`
+`apps/crawling/collectors/danawa_collector.py` : 다나와 전용
 ```python
 from urllib.parse import urljoin
 
@@ -1714,7 +2175,7 @@ def collect_danawa_search(target) -> dict:
     }
 ```
 
-`apps/crawling/collectors/hwahae_collector.py`
+`apps/crawling/collectors/hwahae_collector.py` : 다해 전용
 ```python
 from urllib.parse import urljoin
 
@@ -1773,7 +2234,7 @@ def collect_hwahae_search(target) -> dict:
     }
 ```
 
-`apps/crawling/collectors/glowpick_collector.py`
+`apps/crawling/collectors/glowpick_collector.py` : 글로우픽 전용
 ```python
 from urllib.parse import urljoin
 
@@ -1832,7 +2293,9 @@ def collect_glowpick_search(target) -> dict:
     }
 ```
 
-`apps/crawling/services/repository.py` 추가
+`apps/crawling/services/repository.py` 
+DB 직접 접근만 담당하는 파일입니다.  
+4단계에서 새로 추가되었고, `update_or_create()`를 사용해 있으면 수정, 없으면 생성하는 역할을 맡습니다.
 ```python
 from apps.crawling.models import CrawlRawData
 
@@ -1854,7 +2317,10 @@ def upsert_raw_data(unique_key: str, defaults: dict):
     return obj, created
 ```
 
-`apps/crawling/services/save_service.py` 수정
+`apps/crawling/services/save_service.py` 
+크롤링 결과를 어떻게 저장할지 정리하는 핵심 저장 서비스입니다.  
+4단계에서 가장 중요하게 수정된 파일로,  
+`unique_key` 생성, 해시 처리, page_info/candidate_link 구분, upsert 처리까지 담당합니다.
 ```python
 import hashlib
 
@@ -1963,10 +2429,10 @@ def save_search_result(target, result: dict) -> dict:
         candidate_key = build_candidate_unique_key(target, item["url"])
 
         # 필요하면 한 번만 디버깅
-        # print("candidate title len =", len(item["title"]))
-        # print("candidate url len =", len(item["url"]))
-        # print("candidate unique_key len =", len(candidate_key))
-        # print("page title len =", len(page_info["title"]))
+        print("candidate title len =", len(item["title"]))
+        print("candidate url len =", len(item["url"]))
+        print("candidate unique_key len =", len(candidate_key))
+        print("page title len =", len(page_info["title"]))
 
         _, created = upsert_raw_data(
             unique_key=candidate_key,
@@ -1993,7 +2459,10 @@ def save_search_result(target, result: dict) -> dict:
     }
 ```
 
-`apps/crawling/services/crawl_service.py` 수정
+`apps/crawling/services/crawl_service.py` 
+전체 흐름을 조정하는 중앙 제어 파일입니다.  
+사이트에 따라 collector를 고르고, collector 결과를 save_service로 넘깁니다.  
+즉, 누가 수집하고 누가 저장할지 연결하는 역할입니다.
 ```python
 from apps.crawling.collectors.danawa_collector import collect_danawa_search
 from apps.crawling.collectors.hwahae_collector import collect_hwahae_search
@@ -2031,7 +2500,9 @@ def crawl_search_target(target) -> dict:
     }
 ```
 
-`apps/crawling/management/commands/test_crawl.py` 수정
+`apps/crawling/management/commands/test_crawl.py` 
+터미널에서 `python manage.py test_crawl` 실행 시 시작되는 파일입니다.  
+활성화된 대상을 불러와 크롤링을 돌리고, 성공/실패와 create/update 결과를 로그로 남깁니다.
 ```python
 from django.core.management.base import BaseCommand
 from django.utils import timezone
@@ -2126,7 +2597,9 @@ class Command(BaseCommand):
         )
 ```
 
-`apps/crawling/tests.py` 수정
+`apps/crawling/tests.py` 
+크롤링 저장 로직이 제대로 동작하는지 테스트하는 파일입니다.  
+4단계에서는 특히 중복 저장 방지, update_or_create 정상 동작을 검증하는 용도로 중요해졌습니다.
 ```python
 from django.test import TestCase
 
@@ -2213,47 +2686,82 @@ python manage.py makemigrations crawling
 python manage.py migrate
 ```
 
-3단계에서는
-- `collector`가 수집
-- `crawl_service`가 저장 서비스 호출
-- `save_service` 안에서 DB ORM 작업까지 전부 직접 수행
+1️⃣ 모델 변경 (중복 제거 핵심)
 
-4단계에서는 
-- `collector`  
-    → HTML 수집/파싱 결과 반환만 담당
-    
-- `crawl_service`  
-    → collector 선택 + save_service 호출만 담당
-    
-- `save_service`  
-    → 저장 흐름 제어, 고유키 생성, 저장 정책(create/update) 결정
-    
-- `repository.py`  
-    → `update_or_create()` 같은 ORM 직접 호출만 담당
-    
-즉, 4단계의 핵심은 DB 저장 흐름과 DB 직접 접근을 다시 한 번 나눈 것입니다.
-
-단위 테스트 실행
-```bash
-python manage.py test apps.crawling.tests
+추가된 것
 ```
-- 첫 저장 시 `created_count > 0`
-- 같은 데이터 재저장 시 `updated_count > 0`
-- 총 row 수는 늘어나지 않음
+unique_key  ← 중복 판단 기준 (unique=True)  
+record_type ← 데이터 종류 구분 (page / link)
+```
 
+✔ 역할
+- `unique_key` → 같은 데이터인지 판단
+- `record_type` → 어떤 데이터인지 구분
+
+결과  
+중복 데이터 저장 불가능 구조로 변경
+
+---
+2️⃣ 저장 방식 변경 (가장 중요)
+❌ 3단계
+```
+create()  
+→ 무조건 INSERT  
+→ 중복 계속 쌓임
+```
+
+✅ 4단계
+```
+update_or_create()  
+→ 있으면 UPDATE  
+→ 없으면 CREATE
+```
+
+핵심  
+중복 저장 → 덮어쓰기(upsert)로 변경
+
+---
+3️⃣ 로직 분리 (구조 개선)
+
+❌ 3단계
+```
+crawl_service 안에 다 있음  
+(수집 + 파싱 + 저장)
+```
+
+✅ 4단계
+```
+collector → 수집  
+parser → 분석  
+save_service → 저장 준비  
+repository → DB 저장
+```
+
+핵심  
+역할별로 분리해서 유지보수 가능하게 변경
+
+---
+4️⃣ unique_key 생성 로직 추가
+```
+site + url → 해시(SHA256)
+```
+
+핵심  
+데이터마다 고유 ID 생성
+
+---
+3단계 = 구조 분리 
+4단계 = unique_key + update_or_create로 중복 없는 저장 구조 완성
+
+- `unique_key` 추가 → 중복 기준 생성
+- `update_or_create` → 중복 저장 방지
+- `save_service / repository 분리` → 구조 정리
+
+---
 테스트 크롤링 2번 실행
 ```bash
 python manage.py test_crawl  
 ```
-첫 번째 실행:
-- `created`가 많이 나옴
-- `updated`는 거의 0이거나 적음
-    
-
-두 번째 실행:
-- 같은 대상이면 created가 거의 0
-- updated가 증가
-- 레코드 수가 무한히 늘어나지 않음
 
 4단계 로직분리 성공
 ![[Pasted image 20260315154617.png]]
@@ -2344,7 +2852,7 @@ CrawlTarget
 자동화 도구 cron
 리눅스 서버에서 주기적으로 파이썬 명령 실행
 
-목표
+목표 : `수동 실행 → 자동 스케줄링 + 대상 선택 로직 추가`
 - `CrawlTarget` 중에서 이번 차례에 돌릴 대상만 선택
 - `python manage.py scheduled_crawl --limit 3` 처럼 실행 가능
 - cron이 1시간마다 이 명령어 실행
@@ -2381,7 +2889,14 @@ touch apps/crawling/services/target_selector.py
 touch apps/crawling/management/commands/scheduled_crawl.py
 ```
 
-`apps/crawling/models.py` 수정 : 스케줄링 제어용 필드 추가
+스케줄링을 위한 필드 추가 : 언제 돌릴지 + 무엇을 먼저 돌릴지 결정 가능
+```
+crawl_interval_minutes ← 재수집 주기  
+priority ← 우선순위  
+last_crawled_at ← 마지막 실행 시간
+```
+
+### 3`apps/crawling/models.py` 수정 : 스케줄링 제어용 필드 추가
 ```python
 from django.db import models
 
@@ -2616,6 +3131,9 @@ class CrawlJobLog(models.Model):
 ```
 
 `apps/crawling/admin.py` 수정 : 관리자에서 interval, priority를 볼 수 있게 추가합니다.
+관리자에서 스케줄링 설정 확인 가능
+- priority 표시
+- interval 표시
 ```python
 from django.contrib import admin
 from .models import CrawlTarget, CrawlRawData, CrawlJobLog
@@ -2676,13 +3194,15 @@ class CrawlJobLogAdmin(admin.ModelAdmin):
 ---
 target 선택 서비스 추가
 이 파일이 5단계 핵심입니다.
-- active 대상만 조회
-- `last_crawled_at`이 비어 있으면 먼저
-- 아니면 오래된 순
-- 너무 최근에 돌린 건 제외
-- limit 개수만 반환
 
-`apps/crawling/services/target_selector.py`
+이번에 실행할 target만 고르는 파일
+역할:
+- 아직 안 돌린 것 우선
+- 오래된 것 우선
+- interval 지난 것만 선택
+- limit 개수만큼만 반환
+
+`apps/crawling/services/target_selector.py` : 지금 실행해야 할 대상만 고르는 로직
 ```python
 from datetime import timedelta
 
@@ -2762,7 +3282,14 @@ def get_due_targets(limit: int = 3, target_type: str = "search"):
 ```
 ---
 자동 실행용 management command 추가
-이제 테스트용 `test_crawl` 말고 실제로 cron이 실행할 명령어를 따로 만듭니다.
+
+자동 실행용 명령어
+역할:
+- target_selector 호출
+- crawl_service 실행
+- 결과 로그 저장
+cron이 실행하는 진짜 entry point
+
 `apps/crawling/management/commands/scheduled_crawl.py`
 ```python
 from django.core.management.base import BaseCommand
@@ -3102,7 +3629,7 @@ touch /home/youjung/product-review-service/logs/scheduled_crawl.log
 |item_url|상품 링크|
 |record_type|후보 링크|
 
-AI 분석에 필요한 데이터 추가 크로링
+AI 분석에 필요한 데이터 추가 크롤링
 
 |review|rating|
 |---|---|
@@ -3111,6 +3638,7 @@ AI 분석에 필요한 데이터 추가 크로링
 |가성비 좋음|4|
 
 ---
+JavaScript로 렌더링되는 데이터를 수집하기 위해 Selenium을 도입
 ### 리뷰를 위한 추가 디렉토리
 ```
 apps/crawling/collectors/ 
@@ -3649,7 +4177,7 @@ for r in reviews:
 >>> 
 ```
 ---
-### 리뷰 크로링을 위한 마지막 테스트
+### 리뷰 크롤링을 위한 마지막 테스트
 `apps/crawling/collectors/hwahae_review_collector.py`
 ```python
 import re
@@ -3872,7 +4400,7 @@ for r in reviews:
 
 
 ----
-### 리뷰 크로링을 위한 마지막 단계
+### 리뷰 크롤링을 위한 마지막 단계
 
 최종 디렉토리 구조
 ```
@@ -3901,7 +4429,7 @@ apps/crawling/
         └── scheduled_crawl.py        ✔ = 수정 필요
 ```
 
-`apps/crawling/models.py` (수정)
+### 4`apps/crawling/models.py` (수정)
 ```python
 from django.db import models
 
@@ -4895,14 +5423,497 @@ CTRL + X
 python manage.py scheduled_crawl --limit 3 --review-limit 5 --target-type product
 ```
 
-cron이 실행되면 로그가 쌓입니다.
-```bash
-cat /home/youjung/product-review-service/logs/crawl.log
+---
+
+### 4단계 보완: candidate_link를 product target으로 자동 생성하기
+
+`apps/crawling/collectors/glowpick_collector.py`
+이 파일은 글로우픽 후보 링크 품질 보완입니다.
+기존 문제는 `/ranking/`도 후보로 허용해서 상품 상세가 아닌 링크가 섞일 수 있다는 점입니다.
+```python
+# [유지] urljoin 사용
+from urllib.parse import urljoin, urlparse
+
+# [유지] 공통 HTTP 요청 / 공통 파서 사용
+from apps.crawling.services.http import fetch_page
+from apps.crawling.services.parser import extract_page_info, get_soup
+
+
+def collect_glowpick_search(target) -> dict:
+    """
+    글로우픽 검색/랭킹 페이지를 수집해서
+    페이지 기본 정보와 상품 상세 링크 후보를 반환합니다.
+    """
+
+    # [유지] 페이지 요청
+    response = fetch_page(target.url)
+    html = response.text
+
+    # [유지] 공통 페이지 정보 추출
+    page_info = extract_page_info(html)
+    soup = get_soup(html)
+
+    candidates = []
+    seen = set()
+
+    for a in soup.select("a[href]"):
+        href = (a.get("href") or "").strip()
+        text = a.get_text(" ", strip=True)
+
+        if not href:
+            continue
+
+        full_url = urljoin(target.url, href)
+        parsed = urlparse(full_url)
+
+        # [수정] glowpick 도메인만 허용
+        if "glowpick" not in parsed.netloc:
+            continue
+
+        # [수정] 상품 상세 링크만 허용
+        # 기존에는 /ranking/ 도 허용해서 랭킹 링크가 후보에 섞일 수 있었음
+        if not (
+            parsed.path.startswith("/product/")
+            or parsed.path.startswith("/products/")
+        ):
+            continue
+
+        if full_url in seen:
+            continue
+
+        seen.add(full_url)
+
+        candidates.append({
+            "title": text[:255],
+            "url": full_url,
+        })
+
+    return {
+        "site": "glowpick",
+        "page_info": page_info,
+        "candidate_links": candidates[:20],
+        "html": html,
+    }
 ```
 
-### 지금 바로 새로 크롤링하려면
+수정 코드 2
+`apps/crawling/services/save_service.py`
+기존 4단계는 `candidate_link`를 `CrawlRawData`에만 저장했고,  
+이제 여기에 `CrawlTarget(target_type="product")` 자동 생성을 추가합니다.
+```python
+# [유지] 해시 / transaction / timezone 사용
+import hashlib
 
-리뷰만 다시 확인하려면 기존 crawling 원본 데이터를 비우고, 다시 review 크롤링만 실행하는 게 제일 깔끔합니다.
+from django.db import transaction
+from django.utils import timezone
+
+# [추가] product target 생성을 위해 CrawlTarget import
+from apps.crawling.models import CrawlTarget
+from apps.crawling.services.repository import upsert_raw_data
+
+
+def make_hash(value: str) -> str:
+    """
+    문자열을 SHA256 해시값(64자리 고정 길이)으로 변환합니다.
+    """
+    return hashlib.sha256(value.encode("utf-8")).hexdigest()
+
+
+def build_page_info_unique_key(target) -> str:
+    raw = f"{target.site}:page_info:{target.url}"
+    return make_hash(raw)
+
+
+def build_candidate_unique_key(target, item_url: str) -> str:
+    raw = f"{target.site}:candidate_link:{item_url}"
+    return make_hash(raw)
+
+
+def build_page_info_defaults(target, result: dict) -> dict:
+    """
+    page_info 레코드 저장용 defaults 조립
+    """
+    page_info = result["page_info"]
+    html = result["html"]
+
+    return {
+        "target": target,
+        "source_url": target.url,
+        "page_title": page_info["title"][:500],
+        "item_title": "",
+        "item_url": "",
+        "raw_text": page_info["text_preview"],
+        "raw_html": html[:5000],
+        "record_type": "page_info",
+        "extra_data": {
+            "a_count": page_info["a_count"],
+            "contains_review_word": page_info["contains_review_word"],
+            "contains_keyword": page_info["contains_keyword"],
+        },
+    }
+
+
+def build_candidate_defaults(target, page_title: str, item: dict) -> dict:
+    """
+    candidate_link 레코드 저장용 defaults 조립
+    """
+    return {
+        "target": target,
+        "source_url": target.url,
+        "page_title": page_title[:500],
+        "item_title": item["title"][:500],
+        "item_url": item["url"],
+        "raw_text": "",
+        "raw_html": "",
+        "record_type": "candidate_link",
+        "extra_data": {},
+    }
+
+
+# [추가] candidate_link -> product target 생성 함수
+def create_product_targets_from_candidates(target, candidate_links: list[dict]) -> dict:
+    """
+    search 결과의 candidate_link를 product CrawlTarget으로 승격합니다.
+    """
+    created_count = 0
+    reactivated_count = 0
+
+    for item in candidate_links:
+        item_url = (item.get("url") or "").strip()
+        item_title = (item.get("title") or "").strip()
+
+        if not item_url:
+            continue
+
+        defaults = {
+            "site": target.site,
+            "target_type": "product",
+            "keyword": target.keyword,
+            "title": item_title[:255] if item_title else f"{target.site} 상품 상세",
+            "is_active": True,
+        }
+
+        # [유지/호환] 5단계 필드가 이미 models.py에 있다면 함께 반영
+        if hasattr(target, "crawl_interval_minutes"):
+            defaults["crawl_interval_minutes"] = target.crawl_interval_minutes
+
+        if hasattr(target, "priority"):
+            defaults["priority"] = target.priority
+
+        product_target, created = CrawlTarget.objects.get_or_create(
+            url=item_url,
+            defaults=defaults,
+        )
+
+        if created:
+            created_count += 1
+        else:
+            # [추가] 기존 target이 비활성화 상태면 다시 켜기
+            if not product_target.is_active:
+                product_target.is_active = True
+                product_target.save(update_fields=["is_active"])
+                reactivated_count += 1
+
+    return {
+        "created_product_targets": created_count,
+        "reactivated_product_targets": reactivated_count,
+    }
+
+
+@transaction.atomic
+def save_search_result(target, result: dict) -> dict:
+    """
+    검색 결과를 DB에 저장하되,
+    - page_info는 unique_key로 1건 유지
+    - candidate_link는 item_url 기준으로 중복 저장 방지
+    - [추가] candidate_link를 product target으로도 생성
+    """
+    created_count = 0
+    updated_count = 0
+
+    page_info = result["page_info"]
+    candidate_links = result["candidate_links"]
+
+    # 1. 페이지 정보 upsert
+    page_info_key = build_page_info_unique_key(target)
+    _, created = upsert_raw_data(
+        unique_key=page_info_key,
+        defaults={
+            **build_page_info_defaults(target, result),
+            "unique_key": page_info_key,
+        }
+    )
+    if created:
+        created_count += 1
+    else:
+        updated_count += 1
+
+    # 2. 후보 링크 upsert
+    for item in candidate_links:
+        candidate_key = build_candidate_unique_key(target, item["url"])
+
+        _, created = upsert_raw_data(
+            unique_key=candidate_key,
+            defaults={
+                **build_candidate_defaults(target, page_info["title"], item),
+                "unique_key": candidate_key,
+            }
+        )
+
+        if created:
+            created_count += 1
+        else:
+            updated_count += 1
+
+    # 3. [추가] 후보 링크를 product target으로 생성
+    product_target_summary = create_product_targets_from_candidates(target, candidate_links)
+
+    # 4. [유지] 마지막 크롤링 시간 갱신
+    target.last_crawled_at = timezone.now()
+    target.save(update_fields=["last_crawled_at"])
+
+    return {
+        "page_title": page_info["title"],
+        "candidate_count": len(candidate_links),
+        "created_count": created_count,
+        "updated_count": updated_count,
+        # [추가] test_crawl에서 확인할 수 있도록 반환
+        "created_product_targets": product_target_summary["created_product_targets"],
+        "reactivated_product_targets": product_target_summary["reactivated_product_targets"],
+    }
+```
+
+수정 코드 3
+`apps/crawling/services/crawl_service.py`
+이 파일은 save 결과에 새 값이 생겼으니 그것만 같이 넘기면 됩니다.
+```python
+# apps/crawling/services/crawl_service.py
+
+# [유지] 사이트별 collector import
+from apps.crawling.collectors.danawa_collector import collect_danawa_search
+from apps.crawling.collectors.hwahae_collector import collect_hwahae_search
+from apps.crawling.collectors.glowpick_collector import collect_glowpick_search
+
+# [유지] 저장 서비스 사용
+from apps.crawling.services.save_service import save_search_result
+
+
+def crawl_search_target(target) -> dict:
+    """
+    [유지]
+    - site에 따라 collector 선택
+    - 저장은 save_service에 맡기고
+    - 여기서는 결과 요약만 반환
+    """
+
+    if target.site == "danawa":
+        result = collect_danawa_search(target)
+
+    elif target.site == "hwahae":
+        result = collect_hwahae_search(target)
+
+    elif target.site == "glowpick":
+        result = collect_glowpick_search(target)
+
+    else:
+        raise ValueError(f"지원하지 않는 사이트입니다: {target.site}")
+
+    save_result = save_search_result(target, result)
+
+    return {
+        "page_title": save_result["page_title"],
+        "candidate_count": save_result["candidate_count"],
+        "created_count": save_result["created_count"],
+        "updated_count": save_result["updated_count"],
+        # [추가] product target 생성 결과도 함께 반환
+        "created_product_targets": save_result["created_product_targets"],
+        "reactivated_product_targets": save_result["reactivated_product_targets"],
+    }
+```
+
+수정 코드 4
+`apps/crawling/management/commands/test_crawl.py`
+이 파일은 실행 결과에 product target이 몇 개 생성됐는지를 보여주기 위한 보완입니다.
+```python
+from django.core.management.base import BaseCommand
+from django.utils import timezone
+
+from apps.crawling.models import CrawlTarget, CrawlJobLog
+from apps.crawling.services.crawl_service import crawl_search_target
+
+
+class Command(BaseCommand):
+    help = "크롤링 대상(search 페이지)에 대해 테스트 크롤링을 수행합니다."
+
+    def handle(self, *args, **options):
+        targets = CrawlTarget.objects.filter(
+            is_active=True,
+            target_type="search"
+        )
+
+        total_targets = targets.count()
+        success_count = 0
+        fail_count = 0
+
+        # [추가] 저장 수 집계
+        total_created = 0
+        total_updated = 0
+
+        # [추가] product target 생성 집계
+        total_created_product_targets = 0
+        total_reactivated_product_targets = 0
+
+        site_summary = {}
+
+        log = CrawlJobLog.objects.create(
+            site="all",
+            command_name="test_crawl",
+            status="success",
+            total_targets=total_targets,
+            success_count=0,
+            fail_count=0,
+            message="테스트 크롤링 시작",
+        )
+
+        self.stdout.write(self.style.SUCCESS("테스트 크롤링 시작"))
+
+        for target in targets:
+            self.stdout.write(f"\n[{target.site}] {target.url}")
+
+            try:
+                result = crawl_search_target(target)
+                success_count += 1
+
+                total_created += result["created_count"]
+                total_updated += result["updated_count"]
+                total_created_product_targets += result["created_product_targets"]
+                total_reactivated_product_targets += result["reactivated_product_targets"]
+
+                site_summary[target.site] = {
+                    "targets": site_summary.get(target.site, {}).get("targets", 0) + 1,
+                    "created": site_summary.get(target.site, {}).get("created", 0) + result["created_count"],
+                    "updated": site_summary.get(target.site, {}).get("updated", 0) + result["updated_count"],
+                    "created_product_targets": (
+                        site_summary.get(target.site, {}).get("created_product_targets", 0)
+                        + result["created_product_targets"]
+                    ),
+                    "reactivated_product_targets": (
+                        site_summary.get(target.site, {}).get("reactivated_product_targets", 0)
+                        + result["reactivated_product_targets"]
+                    ),
+                }
+
+                self.stdout.write(
+                    self.style.SUCCESS(
+                        (
+                            f"성공 - title={result['page_title']} / "
+                            f"candidate_count={result['candidate_count']} / "
+                            f"created={result['created_count']} / "
+                            f"updated={result['updated_count']} / "
+                            f"created_product_targets={result['created_product_targets']} / "
+                            f"reactivated_product_targets={result['reactivated_product_targets']}"
+                        )
+                    )
+                )
+
+            except Exception as e:
+                fail_count += 1
+                self.stdout.write(
+                    self.style.ERROR(f"실패 - {str(e)}")
+                )
+
+        final_status = "success" if fail_count == 0 else "failed"
+
+        log.status = final_status
+        log.success_count = success_count
+        log.fail_count = fail_count
+        log.message = (
+            f"사이트별 처리 수: {site_summary} | "
+            f"전체 created={total_created}, updated={total_updated}, "
+            f"created_product_targets={total_created_product_targets}, "
+            f"reactivated_product_targets={total_reactivated_product_targets}"
+        )
+        log.finished_at = timezone.now()
+        log.save()
+
+        self.stdout.write("\n테스트 크롤링 종료")
+        self.stdout.write(
+            self.style.SUCCESS(
+                (
+                    f"총 {total_targets}개 / 성공 {success_count} / 실패 {fail_count} / "
+                    f"created {total_created} / updated {total_updated} / "
+                    f"created_product_targets {total_created_product_targets} / "
+                    f"reactivated_product_targets {total_reactivated_product_targets}"
+                )
+            )
+        )
+```
+
+`apps/crawling/tests.py`
+```python
+from django.test import TestCase
+
+from apps.crawling.models import CrawlRawData, CrawlTarget
+from apps.crawling.services.save_service import save_search_result
+
+
+class SaveSearchResultTest(TestCase):
+    def setUp(self):
+        self.target = CrawlTarget.objects.create(
+            site="glowpick",
+            target_type="search",
+            keyword="수분크림",
+            title="글로우픽 수분크림 검색",
+            url="https://glowpick.co.kr/ranking/search/%EC%88%98%EB%B6%84%ED%81%AC%EB%A6%BC",
+        )
+
+        self.result = {
+            "site": "glowpick",
+            "page_info": {
+                "title": "테스트 페이지",
+                "a_count": 10,
+                "contains_review_word": True,
+                "contains_keyword": True,
+                "text_preview": "미리보기 텍스트",
+            },
+            "candidate_links": [
+                {
+                    "title": "상품 A",
+                    "url": "https://glowpick.co.kr/products/111",
+                },
+                {
+                    "title": "상품 B",
+                    "url": "https://glowpick.co.kr/products/222",
+                },
+            ],
+            "html": "<html><title>테스트 페이지</title></html>",
+        }
+
+    def test_save_search_result_creates_product_targets(self):
+        summary = save_search_result(self.target, self.result)
+
+        # [유지] raw data는 page_info 1 + candidate 2
+        self.assertEqual(CrawlRawData.objects.count(), 3)
+
+        # [추가] product target 2개 생성 확인
+        self.assertEqual(
+            CrawlTarget.objects.filter(site="glowpick", target_type="product").count(),
+            2
+        )
+
+        self.assertEqual(summary["created_product_targets"], 2)
+```
+---
+실행
+```bash
+python manage.py check
+```
+정상 기대:
+```
+System check identified no issues (0 silenced).
+```
+
+glowpick search target 등록 확인
 ```bash
 python manage.py shell
 ```
@@ -4910,74 +5921,79 @@ python manage.py shell
 ```python
 from apps.crawling.models import CrawlTarget
 
-targets = [
-    {
-        "site": "danawa",
-        "target_type": "search",
-        "keyword": "수분 보습크림",
-        "title": "다나와 수분크림 검색",
-        "url": "[https://search.danawa.com/dsearch.php?query=%EC%88%98%EB%B6%84%ED%81%AC%EB%A6%BC](https://search.danawa.com/dsearch.php?query=%EC%88%98%EB%B6%84+%EB%B3%B4%EC%8A%B5%ED%81%AC%EB%A6%BC&tab=main)",
-    },
-    {
-        "site": "hwahae",
-        "target_type": "search",
-        "keyword": "수분 보습크림",
-        "title": "화해 수분크림 검색",
-        "url": "[https://www.hwahae.co.kr/search?q=%EC%88%98%EB%B6%84%ED%81%AC%EB%A6%BC&type=goods](https://www.hwahae.co.kr/search?q=%EC%88%98%EB%B6%84%20%EB%B3%B4%EC%8A%B5%ED%81%AC%EB%A6%BC)",
-    },
-    {
+for t in CrawlTarget.objects.all():
+    print(t.id, t.site, t.target_type, t.is_active, t.url)
+```
+
+Danawa를 잠깐 끄기
+```python
+from apps.crawling.models import CrawlTarget
+
+CrawlTarget.objects.filter(site="danawa", target_type="search").update(is_active=False)
+
+for t in CrawlTarget.objects.all():
+    print(t.id, t.site, t.target_type, t.is_active, t.url)
+```
+정상 기대:
+```
+1 danawa search False ...
+```
+
+glowpick search target 등록
+같은 shell에서 이어서 실행:
+```python
+from apps.crawling.models import CrawlTarget
+
+target, created = CrawlTarget.objects.get_or_create(
+    url="https://glowpick.co.kr/ranking/search/%EC%88%98%EB%B6%84%ED%81%AC%EB%A6%BC",
+    defaults={
         "site": "glowpick",
         "target_type": "search",
-        "keyword": "수분 보습크림",
+        "keyword": "수분크림",
         "title": "글로우픽 수분크림 검색",
-        "url": "[https://glowpick.co.kr/ranking/search/%EC%88%98%EB%B6%84%ED%81%AC%EB%A6%BC](https://glowpick.co.kr/ranking/search/%EC%88%98%EB%B6%84%20%EB%B3%B4%EC%8A%B5%ED%81%AC%EB%A6%BC)",
-    },
-]
+        "is_active": True,
+    }
+)
 
-for item in targets:
-    CrawlTarget.objects.update_or_create(
-        url=item["url"],
-        defaults=item,
-    )
+print("created =", created)
 
-print("등록 완료")
+for t in CrawlTarget.objects.all():
+    print(t.id, t.site, t.target_type, t.is_active, t.url)
+```
+정상 기대:
+```
+1 danawa search False ...
+2 glowpick search True https://glowpick.co.kr/ranking/search/...
+```
 
+끝나면 종료:
+```python
 exit()
 ```
-여기서 `review`가 0이면 리뷰가 아직 거의 안 들어간 상태일 수 있습니다.
 
-이제 리뷰 테스트 크롤링 다시 실행
+한 번 더 test_crawl 실행
+중복 저장이 아니라 update가 되는지 확인하려면 한 번 더 돌려봅니다.
 ```bash
-python manage.py test_crawl --limit 3 --review-limit 10 
-python manage.py test_crawl --limit 3 --review-limit 10  
-python manage.py test_crawl --limit 3 --review-limit 10
+python manage.py test_crawl
 ```
-한번씩 시간을 두고 반복해서 터미널에 위의 명령어를 입력합니다.
+기대 결과:
+- 첫 번째 실행: `created`가 큼
+- 두 번째 실행: `updated`가 증가
+- `created_product_targets`는 거의 0에 가까움
 
-다시 shell에서 review 개수 확인
+---
+크롤링이 자동으로 잘 돌고 있는지 확인하는 가장 기본적인 로그 확인 명령어
+최근 로그만 보기
 ```bash
-python manage.py shell
+tail -n 20 /home/youjung/product-review-service/logs/crawl.log
 ```
+마지막 20줄만 보기
 
-```python
-from apps.crawling.models import CrawlRawData, CrawlTarget
-
-print("search target:", CrawlTarget.objects.filter(target_type="search").count())
-print("product target:", CrawlTarget.objects.filter(target_type="product").count())
-
-print("candidate_link:", CrawlRawData.objects.filter(record_type="candidate_link").count())
-print("page_info:", CrawlRawData.objects.filter(record_type="page_info").count())
-print("review:", CrawlRawData.objects.filter(record_type="review").count())
+실시간 로그 보기
+```bash
+tail -f /home/youjung/product-review-service/logs/crawl.log
 ```
-해석
-- `search target`은 늘었는데 `candidate_link`가 0  
-    → 검색 페이지 파싱이 안 됨
-    
-- `candidate_link`는 생기는데 `product target`이 안 늘어남  
-    → 후보 링크를 상품 타겟으로 넘기는 단계 확인 필요
-    
-- `product target`은 늘었는데 `review`가 0  
-    → 상품 상세 리뷰 파서 문제
+로그가 쌓일 때마다 계속 보여줌 (크롤링 자동화 확인할 때 필수)
 
 ---
 이제 Django 관리자 페이지(admin)에서 확인하시면 됩니다.
@@ -4996,3 +6012,247 @@ DB 저장
   ↓
 admin에서 확인
 ```
+
+---
+### 이후 18번 Celery Redis기반으로 변경한 이후 가상환경 기반을 19번 Docker 기반으로 변경되면 아래 명령어로 변경해야 합니다.
+```bash
+docker compose exec web python manage.py check  
+docker compose exec web python manage.py shell  
+docker compose exec web python manage.py migrate  
+docker compose exec web python manage.py test_crawl  
+docker compose exec web python manage.py test_crawl --limit 3 --review-limit 10 
+```
+
+---
+### 새로운 크롤링 사이트 추가
+
+딱 4곳만 건드립니다.
+- `apps/crawling/models.py`
+- `apps/crawling/collectors/webscrapingdev_collector.py` 새 파일
+- `apps/crawling/services/crawl_service.py`
+- Django shell에서 `CrawlTarget` 1개 추가
+
+**안 건드리는 파일**
+- `apps/products/*`
+- `apps/reviews/*`
+- `apps/interactions/*`
+- `save_service.py`
+- `repository.py`
+- `admin.py`
+- 기존 collector 파일들
+즉, 기존 흐름과 충돌을 최소화하는 방식입니다.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+---
+`2.` 기존 사이트 크롤링을 중단할 때
+
+중단은 두 방식이 있습니다.
+
+방식 A. 운영만 중단
+가장 안전한 방법입니다.
+
+즉, 코드는 남겨두고 대상만 비활성화합니다.
+
+수정할 것
+`CrawlTarget.is_active = False`
+
+예시:
+```python
+target = CrawlTarget.objects.get(site="glowpick")  
+target.is_active = False  
+target.save()
+```
+
+이렇게 하면 `test_crawl.py`나 `scheduled_crawl.py`에서  
+보통 `is_active=True` 대상만 조회하므로 실행 대상에서 빠집니다.
+
+장점
+- 나중에 다시 켜기 쉬움
+- 코드 손상 없음
+- 운영 안정적
+
+이 경우 삭제 안 해도 되는 파일
+- `glowpick_collector.py`
+- `crawl_service.py`의 glowpick 분기
+- `SITE_CHOICES`
+
+다 그대로 둬도 됩니다.
+
+---
+방식 B. 코드까지 완전히 제거
+정말 다시 안 쓸 사이트일 때만 합니다.
+
+이 경우는 삭제 전에 먼저 비활성화하고, 데이터 영향 확인 후 제거하는 게 좋습니다.
+
+---
+중단 시 수정/삭제 순서
+
+1️⃣ 먼저 대상 비활성화
+
+가장 먼저 해야 합니다.
+이유:
+- 코드 삭제 전에 운영 중단
+- 실수로 스케줄러가 돌지 않게 방지
+
+---
+2️⃣ `crawl_service.py`에서 분기 제거
+
+예를 들어 glowpick를 제거한다면:
+
+삭제 대상 개념:
+```python
+elif target.site == "glowpick":  
+    result = collect_glowpick_search(target)
+```
+
+그리고 import도 제거:
+```python
+from apps.crawling.collectors.glowpick_collector import collect_glowpick_search
+```
+
+---
+3️⃣ `collectors/glowpick_collector.py` 삭제
+
+이제 더 이상 호출되지 않으면 파일을 삭제할 수 있습니다.
+
+---
+4️⃣ `models.py`의 `SITE_CHOICES`에서 제거
+
+예시:
+```python
+SITE_CHOICES = [  
+    ("danawa", "다나와"),  
+    ("hwahae", "화해"),  
+    # ("glowpick", "글로우픽"), 제거  
+]
+```
+주의:  
+이미 DB에 `site="glowpick"` 데이터가 남아 있으면 바로 제거하기 전에 데이터 정리가 필요할 수 있습니다.
+
+---
+5️⃣ 기존 DB 데이터 처리 결정
+
+여기서 선택해야 합니다.
+
+ 선택지 1: 과거 데이터는 보존
+- `CrawlRawData`
+- `CrawlJobLog`
+- `CrawlTarget`  
+    를 남겨둠
+
+이 경우:
+- 운영 기록은 보존됨
+- 다만 choices 제거 시 기존 값 표시 문제를 점검해야 함
+
+선택지 2: 관련 데이터도 삭제
+
+예시 개념:
+- glowpick 대상 삭제
+- glowpick raw 데이터 삭제
+- glowpick 로그 삭제
+
+이건 조심해야 합니다.  
+보통 운영 기록은 남기는 편이 더 안전합니다.
+
+---
+6️⃣ 테스트 코드 수정
+
+`tests.py`에 glowpick 관련 테스트가 있으면 제거하거나 수정해야 합니다.
+
+---
+기존 사이트 중단 순서 요약
+
+안전한 운영 중단
+1. `CrawlTarget.is_active=False`
+2. 스케줄 실행에서 빠지는지 확인
+3. 필요 시 장기적으로 코드 유지
+
+완전 제거
+1. `is_active=False`
+2. `crawl_service.py` 분기 제거
+3. collector import 제거
+4. collector 파일 삭제
+5. `SITE_CHOICES` 수정
+6. 관련 테스트 수정
+7. 필요 시 DB 데이터 정리
+
+---
+`3.` 실무에서 추천하는 방식
+
+실무에서는 보통 바로 삭제하지 않고 이렇게 갑니다.
+
+1단계
+운영 중단만 먼저
+```
+is_active=False
+```
+
+2단계
+몇 주간 문제 없는지 확인
+
+3단계
+정말 필요 없으면 코드 제거
+
+이유:
+- 갑자기 다시 살릴 수 있음
+- 장애 원인 추적 가능
+- 과거 로그 확인 가능
+
+---
+최종 정리
+
+새 사이트 추가 시 추가 파일
+- `apps/crawling/collectors/새사이트_collector.py`
+
+수정 파일
+- `apps/crawling/services/crawl_service.py`
+- `apps/crawling/models.py`
+- 필요 시 `tests.py`
+
+운영 작업
+- `CrawlTarget` 데이터 등록
+
+---
+기존 사이트 중단 시
+
+가장 먼저
+- `CrawlTarget.is_active=False`
+
+완전 제거 시 수정/삭제
+- `apps/crawling/services/crawl_service.py` 수정
+- `apps/crawling/collectors/기존사이트_collector.py` 삭제
+- `apps/crawling/models.py` 수정
+- 필요 시 `tests.py` 수정
+- 필요 시 DB 데이터 정리

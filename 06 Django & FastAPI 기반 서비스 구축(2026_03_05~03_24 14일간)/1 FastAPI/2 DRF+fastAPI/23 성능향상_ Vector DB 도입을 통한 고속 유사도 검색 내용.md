@@ -1,22 +1,339 @@
 현재 방식은 리뷰를 가져와 매번 FastAPI에서 계산하지만, 데이터가 많아지면 성능이 저하됩니다. 이를 해결하기 위해 PostgreSQL의 확장 기능인 pgvector를 사용하여 DB 레벨에서 고속 벡터 검색을 수행하도록 개편합니다.
 
-쉽게 설명하면 현재 구조는 다음과 같습니다.
+pgvector는 PostgreSQL의 확장 기능으로 벡터(숫자 배열) 간 거리 계산 + 유사도 검색 기능입니다. 
+
+PostgreSQL는 우리가 단순히 데이터를 저장을 하는 기능으로 알고 있지만 데이터를 저장 + 검색 + 계산까지 해주는 프로그램입니다. 단순히 저장이 아니라
 ```
-리뷰 1개 → FastAPI → 모든 리뷰 비교 (for문)
-👉 O(N) → 데이터 많아지면 느림
+1. 저장한다  
+2. 꺼낸다  
+3. 조건으로 찾는다  
+4. 계산한다
+```
+이런것을 처리할수 있습니다.
+
+
+아래의 내용은 DB 공통 언어인 SQL이고 거의 모든 DB에서 사용하는 공통 언어입니다
+1️⃣ 저장
+```sql
+INSERT INTO review (content) VALUES ('좋아요');
+```
+데이터 넣기
+
+---
+2️⃣ 검색
+```sql
+SELECT * FROM review WHERE product_id=1;
+```
+조건으로 찾기
+
+---
+3️⃣ 계산
+```sql
+SELECT COUNT(*) FROM review;
+```
+개수 계산
+
+---
+4️⃣ 정렬
+```sql
+SELECT * FROM review ORDER BY created_at DESC;
+```
+최신순 정렬
+
+여기까지가 기본 DB입니다.
+
+우리가 초반에 사용했던 SQLite도 기본 위의 기능이 가능합니다. 그러나 
+동시 처리 (Concurrency)
+- 여러 명이 동시에 쓰면 느림
+- 파일 기반 DB라서
+Django 개발용 사용할수 있지만
+서비스용 ❌ 비추입니다.
+
+그런데 PostgreSQL은 더 강력합니다.
+```
+PostgreSQL은 계산을 엄청 잘하는 DB입니다.
 ```
 
-개선구조는 다음과 같습니다
+---
+#### PostgreSQL 확장은 기본 DB 기능으로 부족할 때, 특정 기능을 추가하는 것
+###### 대표적인 확장들
+| 확장               | 기능       |
+| ---------------- | -------- |
+| pgvector         | AI 벡터 검색 |
+| PostGIS          | 지도(GPS)  |
+| full-text search | 검색엔진     |
+| JSONB            | JSON 처리  |
+1️⃣ pgvector → AI / 추천 / 유사도
+이런 상황이면 사용
 ```
-리뷰 → FastAPI → 임베딩 1번 생성
-👉 DB(pgvector)에 저장
-
-이후:
-👉 DB에서 유사한 벡터 TOP N 검색 (인덱스 사용)
-👉 O(log N) 수준으로 개선
+- 문장 유사도 비교  
+- 리뷰 추천  
+- 상품 추천  
+- 챗봇 검색 (RAG)
+```
+예:
+```
+"이 리뷰랑 비슷한 리뷰 찾아줘"
+```
+사용 이유:
+```
+의미 기반 검색 필요  
+→ 숫자 벡터 비교 필요
 ```
 
-전체 구조
+---
+2️⃣ PostGIS → 지도 / 위치 기반 서비스
+```
+- 맛집 지도  
+- 주변 매장 찾기  
+- 거리 계산
+```
+예:
+```
+"내 주변 1km 안 카페 보여줘"
+```
+사용 이유:
+```
+위도/경도 + 거리 계산 필요
+```
+
+---
+3️⃣ full-text search → 검색 기능: 보통 데이터가 많아질수록 훨씬 유리
+```
+- 게시글 검색  
+- 블로그 검색  
+- 상품 검색
+```
+예:
+```
+"수분크림 추천"
+```
+사용 이유:
+```
+키워드 기반 검색 (LIKE보다 훨씬 빠름)
+```
+
+각 검색기능의 차이점
+- JS 내부 검색
+    - 이미 화면에 내려온 데이터 안에서만 검색
+    - 작은 목록에는 간단하고 빠름
+    - 데이터가 많으면 브라우저가 다 받아야 해서 비효율적
+- 쿼리스트링 + 일반 DB 검색
+    - 예: `?q=크림`
+    - 보통 `icontains`, `LIKE` 검색
+    - 간단하지만 큰 데이터에서 느려질 수 있음
+- PostgreSQL full-text search
+    - DB가 검색용 방식으로 색인해서 찾음
+    - 게시글, 상품, 문서가 많을수록 유리
+    - 정렬, 관련도 점수도 가능
+작은 리스트는 JS 검색도 충분  
+큰 데이터, 서버 검색, 검색 품질이 중요하면 full-text search가 유리
+
+### full-text search 사용방법
+보통 바꾸는 파일은 이 정도입니다.
+
+`models.py` : 검색 대상 필드 정의
+```python
+class Product(models.Model):
+    name = models.CharField(max_length=100)
+    description = models.TextField()
+```
+
+`views.py` : 검색 로직 작성
+```python
+from django.contrib.postgres.search import SearchVector, SearchQuery
+
+products = Product.objects.annotate(
+    search=SearchVector("name", "description")
+).filter(search=SearchQuery("수분크림"))
+```
+
+`serializers.py`
+```python
+class ProductSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Product
+        fields = "__all__"
+```
+
+`urls.py` : 검색 API 연결
+```python
+path("products/search/", ProductSearchAPIView.as_view())
+```
+
+`settings.py` : PostgreSQL 관련 앱 추가가 필요한 경우 있음
+```python
+INSTALLED_APPS = [
+    ...
+    "django.contrib.postgres",
+]
+```
+
+---
+4️⃣ JSONB → 유연한 데이터 구조
+```
+- 구조가 자주 바뀌는 데이터  
+- API 응답 저장  
+- 로그 저장
+```
+예:
+```
+{
+  "user_action": "click",
+  "device": "mobile"
+}
+```
+사용 이유:
+```
+테이블 구조 변경 없이 데이터 저장
+```
+
+JSONB가 하는 일
+PostgreSQL 안에 JSON 형태 데이터를 그대로 저장하고,  
+그 안의 키를 기준으로 조회/필터링할 수 있게 해줍니다.
+
+예를 들어
+```json
+{
+  "device": "mobile",
+  "browser": "chrome",
+  "clicked": true
+}
+```
+이걸 JSONB 필드에 저장해두고,
+```sql
+metadata->>'device' = 'mobile'
+```
+이런 식으로 DB에서 검색 가능
+
+시리얼라이저 역할은:
+- 요청 데이터 검증
+- 타입 체크
+- 필수값 확인
+- 응답 형태 정리
+
+JSONB 역할은:
+- DB에 유연한 JSON 구조 저장
+- DB 내부에서 JSON 키 조회
+
+즉,
+- Serializer = API 입구에서 검증
+- JSONB = DB 저장 방식
+서로 역할이 다릅니다.
+
+
+### JSONB 사용방법
+
+`models.py` : JSONField 추가
+```python
+from django.db import models
+
+class EventLog(models.Model):
+    event_name = models.CharField(max_length=100)
+    metadata = models.JSONField(default=dict)
+```
+
+`views.py` 또는 `services.py` : JSON 내부 키로 검색
+```python
+EventLog.objects.filter(metadata__device="mobile")
+```
+
+`serializers.py` : JSON 응답/입력 처리
+```python
+class EventLogSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = EventLog
+        fields = "__all__"
+```
+
+`urls.py` : API 연결
+
+즉, PostgreSQL은
+```
+플러그인 끼우듯 기능 확장 가능한 DB입니다.
+```
+
+PostgreSQL 기능을 쓴다고 해서  
+특별한 새 파일이 꼭 생기는 건 아닙니다.
+
+보통은 기존 Django 파일에서 처리합니다:
+- `models.py` → 어떤 데이터 구조로 저장할지
+- `views.py` → 검색/조회 로직
+- `serializers.py` → API 입출력 검증/응답
+- `urls.py` → 라우팅
+- `settings.py` → postgres 관련 앱/설정 추가
+이런 파일들을 통해 로직을 작성하고 셋팅하는 작업으로 이런 확장기능을 적용할수 있습니다.
+
+---
+현재 우리 구조는
+```
+Django → for문 → FastAPI
+```
+DB는 그냥 저장만 하는 구조로 설계되어 있습니다.
+
+pgvector 구조로 변경하면
+```
+Django → DB에게 요청  
+→ DB가 유사도 계산  
+→ 결과 반환
+```
+이렇게 DB가 일을 대신 해줍니다.
+
+즉 이런 구조기능을 적용할수 있습니다.
+```
+PostgreSQL (기본 DB)  
+       +  
+pgvector (AI 기능)
+```
+
+pgvector는 AI 유사도 계산을 DB에서 빠르게 처리해서 속도 + 확장성 + 비용을 모두 개선하는 기술입니다.
+
+기존 (for문 + FastAPI 반복 호출)
+```
+리뷰 1개  
+→ for문  
+→ FastAPI 20번 호출  
+→ 하나씩 비교
+```
+문제:
+- 느림 (네트워크 왕복)
+- 서버 부하 큼
+- 확장 불가
+
+pgvector 방식
+```
+리뷰 → 임베딩 1번 생성  
+→ DB에 저장  
+→ DB에서 TOP 3 바로 검색
+```
+특징:
+- 요청 1번
+- DB 내부 계산
+- 즉시 결과
+
+###### 성능차이를 보면
+|데이터 수|기존 방식|pgvector|
+|---|---|---|
+|100개|빠름|빠름|
+|1,000개|느려짐|빠름|
+|10,000개|매우 느림|매우 빠름|
+|1,000,000개|거의 불가능|가능|
+실제로 100배 이상 차이 발생
+
+pgvector의 장점:
+- 속도
+- 확장성
+- 비용 절감
+- 구조가 깔끔해짐
+```
+기존방식:
+Django → FastAPI → 반복 호출 → 결과 정리 (처리시간: 2~3초 이상)
+
+변경방식
+Django → DB → 끝 (처리시간: 수십 ms 수준)
+```
+
+### 변경된 전체 구조
 ```
 [FastAPI] → 임베딩 생성만 담당
 [PostgreSQL + pgvector] → 유사도 검색 담당
@@ -33,6 +350,19 @@
 → 따라서 PostgreSQL에 벡터 검색 기능을 추가하기 위해 `pgvector` 확장이 포함된 이미지로 변경해야 합니다. 
 
 이를 위해 `docker-compose.yml`에서 사용 중인 PostgreSQL 이미지를 `pgvector`가 포함된 이미지로 교체합니다.
+
+즉, pgvector를 도커에 적용하는 이유는 PostgreSQL 컨테이너 안에 벡터 기능을 포함시키기 위해서입니다
+
+도커에서는 왜 따로 설정해야 하냐면 도커는 독립된 환경(컨테이너)입니다
+즉:
+- 로컬에 pgvector 설치해도  
+    ❌ 컨테이너에는 없음
+
+그래서 하는 것
+```yml
+image: ankane/pgvector
+```
+pgvector가 이미 설치된 PostgreSQL 사용 하게 됩니다.
 
 `backend/docker-compose.yml (pgvector 적용)`
 ```yml
@@ -64,6 +394,7 @@ product-review-service/
 │   ├── .venv
 │   ├── main.py
 ```
+
 
 실행
 ```bash
@@ -137,6 +468,8 @@ ReviewEmbedding → AI 전용 데이터
 ```
 실무에서는 AI 데이터 분리가 기본
 
+중요) 빌드의 위치는 `docker-compose.yml` 파일이 있는 위치의 경로여야 합니다.
+우리 프로젝트는 `backend/docker-compose.yml` 파일이 있으므로 반드시 경로를 `cd backend` 로 변경후 `build` 명령어를 적용해야 합니다.
 
 수정한 내용을 Docker 이미지 다시 빌드
 ```bash
@@ -156,11 +489,105 @@ def embed_text(request: EmbeddingRequest):
     return {"embeddings": vectors}
 ```
 
+실제 fast api에서 받은 결과
+```json
+{
+  "embeddings": [
+    [0.12, 0.55, 0.91, ..., 384개 숫자]
+  ]
+}
+```
+
+기존 방식
+기존에는 이런 느낌입니다.
+```
+기준 리뷰 1개  
+→ 후보 리뷰 20개  
+→ for문  
+→ text1, text2 묶어서 FastAPI 20번 호출  
+→ 유사도 점수 20개 받음
+```
+
+즉,
+- FastAPI가 비교까지 담당
+- Django가 for문으로 반복 호출
+- HTTP 요청이 많이 발생
+
+변경 후 방식
+이제는 이렇게 바뀝니다.
+```
+리뷰 여러 개  
+→ 한꺼번에 리스트로 FastAPI에 보냄  
+→ 벡터 여러 개 받음  
+→ DB에 저장  
+→ DB(pgvector)가 내부에서 유사도 비교
+```
+
+즉,
+- FastAPI는 문장들을 숫자 벡터로 바꾸는 역할만
+- PostgreSQL(pgvector)은 저장된 벡터끼리 비교
+- Django는 흐름만 제어
+
+다시 말하면:
+- 한꺼번에 보내는 것은 텍스트 리스트
+- 받아오는 것은 유사도 점수가 아니라 벡터 리스트
+- 비교는 FastAPI가 아니라 DB 내부(pgvector) 에서 수행
+
+
+비교해서 보면 기존
+```
+[text1, text2] → FastAPI → similarity=0.87  
+[text1, text3] → FastAPI → similarity=0.72  
+[text1, text4] → FastAPI → similarity=0.65  
+...
+```
+
+변경 후
+```
+[text1, text2, text3, text4, ...]  
+→ FastAPI  
+→ [벡터1, 벡터2, 벡터3, 벡터4, ...]  
+```
+→ DB 저장  
+→ DB에서 벡터1과 가장 가까운 것 TOP 3 검색
+
+---
+핵심 차이
+비교 위치 변화
+
+기존:
+```
+Django for문 + FastAPI 반복 호출
+```
+
+변경 후:
+```
+DB(pgvector) 내부 비교
+```
+
+예전에는 비교 요청을 여러 번 보냈고,  
+이제는 텍스트 여러 개를 한 번에 보내 벡터를 만든 뒤, DB가 내부에서 비교하는 구조입니다.
+
+즉, HTTP 방식은 그대로입니다 하지만 무엇을 보내느냐와 어디서 비교하느냐가 바뀐 것입니다.
+요청 데이터 형태
+```
+# 기존방식
+한 번 요청 = 문장 2개  
+(text1, text2)  
+→ 비교 요청
+```
+
+```
+변경 후
+한 번 요청 = 문장 여러 개  
+(text 리스트)  
+→ 벡터 생성 요청
+```
+
+위의 코드가 수정되었으므로 이부분은 삭제합니다.
 ```python
 # EmbeddingResponse,
 ```
-위의 코드가 수정되었으므로 이부분은 삭제합니다.
-
 ---
 `4.` Django → FastAPI 호출 함수
 `backend/apps/ai_gateway/services.py` : 수정
@@ -190,25 +617,45 @@ class FastAPIClient:
 
 `backend/apps/ai_gateway/tasks.py 수정`
 ```python
+# [역할] Celery 비동기 작업 등록용
 from celery import shared_task
+
+# [역할] 작업 시작/종료 시간 저장용
 from django.utils import timezone
+
+# [역할] FastAPI 요청 실패 시 재시도 처리용
 from requests import RequestException
 
+# [핵심] pgvector 거리 계산 함수
+# DB 안에서 embedding 간 코사인 거리 계산할 때 사용
 from pgvector.django import CosineDistance
 
+# [역할] 기준 리뷰 / 후보 리뷰 조회용
 from apps.reviews.models import Review
+
+# [역할]
+# - AIAnalysisTask: 작업 상태 저장
+# - ReviewEmbedding: 리뷰별 벡터 저장
+# - ReviewSimilarityResult: 유사도 결과 저장
 from .models import AIAnalysisTask, ReviewEmbedding, ReviewSimilarityResult
+
+# [역할] FastAPI 임베딩 API 호출용
 from .services import FastAPIClient
 
+# [역할] 결과를 Redis Pub/Sub으로 WebSocket에 전달
 import redis
 import json
 import logging
 
 
+# [역할] 로그 출력기
 logger = logging.getLogger(__name__)
 
 
 def get_similarity_label(score: float) -> str:
+    """
+    [역할] 점수를 사람이 보기 쉬운 라벨로 변환
+    """
     if score > 0.7:
         return "매우 비슷"
     if score > 0.5:
@@ -220,21 +667,32 @@ def get_similarity_label(score: float) -> str:
 
 @shared_task(
     bind=True,
+    # [역할] FastAPI 통신 에러 발생 시 자동 재시도
     autoretry_for=(RequestException,),
     retry_backoff=True,
     retry_kwargs={"max_retries": 3},
 )
 def analyze_review_similarity_task(self, review_id: int, requested_by_id: int | None = None):
     """
-    기준 리뷰 1개를 기준으로 같은 상품 내 다른 리뷰들과
-    pgvector 기반 유사도 검색을 수행한 뒤 결과를 저장하고,
-    Redis publish를 통해 WebSocket 클라이언트에 전달한다.
+    [전체 역할]
+    1. 기준 리뷰 조회
+    2. 기준 리뷰 임베딩 생성 후 DB 저장
+    3. 후보 리뷰 임베딩이 없으면 생성 후 DB 저장
+    4. pgvector로 DB 내부 유사도 검색
+    5. 결과 저장
+    6. Redis publish로 WebSocket 클라이언트에게 알림
     """
+
+    # [역할] 현재 사용하는 임베딩 모델 이름
     MODEL_NAME = "upskyy/e5-small-korean"
+
+    # [역할] 너무 낮은 점수는 결과에서 제외하기 위한 기준값
     SIMILARITY_THRESHOLD = 0.45
 
     logger.info(f"[START] Task 시작 | task_id={self.request.id} review_id={review_id}")
 
+    # [역할] Redis 연결
+    # 작업 완료 후 결과를 publish하기 위해 사용
     redis_client = redis.Redis(
         host="redis",
         port=6379,
@@ -242,6 +700,7 @@ def analyze_review_similarity_task(self, review_id: int, requested_by_id: int | 
         decode_responses=True,
     )
 
+    # [역할] 현재 Task 상태를 DB에 기록
     task_status = AIAnalysisTask.objects.get(task_id=self.request.id)
     task_status.status = AIAnalysisTask.STATUS_STARTED
     task_status.started_at = timezone.now()
@@ -249,27 +708,38 @@ def analyze_review_similarity_task(self, review_id: int, requested_by_id: int | 
     task_status.save(update_fields=["status", "started_at", "error_message"])
 
     try:
+        # ---------------------------------------------------
+        # 1) 기준 리뷰 조회
+        # ---------------------------------------------------
         source_review = Review.objects.select_related("user", "product").get(
             id=review_id,
             is_public=True,
         )
-
         logger.info(f"[SOURCE] 기준 리뷰 조회 완료 | review_id={source_review.id}")
 
+        # [예외 처리] 본문이 비어 있으면 분석 불가
         if not source_review.content or not source_review.content.strip():
             raise ValueError("분석할 리뷰 내용이 없습니다.")
 
-        # 1) 기준 리뷰 임베딩 생성/저장
+        # ---------------------------------------------------
+        # 2) 기준 리뷰 임베딩 생성 후 DB 저장
+        # ---------------------------------------------------
+        # [핵심]
+        # FastAPI에 텍스트를 보내서 384차원 벡터를 받아옴
         source_embedding = FastAPIClient.get_embedding(source_review.content)
 
+        # [핵심]
+        # ReviewEmbedding 테이블에 기준 리뷰 벡터 저장
+        # 이미 있으면 update, 없으면 create
         ReviewEmbedding.objects.update_or_create(
             review=source_review,
             defaults={"embedding": source_embedding},
         )
-
         logger.info(f"[EMBED] 기준 리뷰 임베딩 저장 완료 | review_id={source_review.id}")
 
-        # 2) 같은 상품의 다른 리뷰들 조회
+        # ---------------------------------------------------
+        # 3) 같은 상품의 다른 리뷰들 조회
+        # ---------------------------------------------------
         candidate_reviews = (
             Review.objects
             .select_related("user")
@@ -282,50 +752,78 @@ def analyze_review_similarity_task(self, review_id: int, requested_by_id: int | 
         )
 
         candidate_count = candidate_reviews.count()
-
         logger.info(f"[CANDIDATES] 후보 리뷰 개수={candidate_count}")
 
+        # [역할] 후보 개수도 Task 상태 테이블에 기록
         task_status.candidate_count = candidate_count
         task_status.save(update_fields=["candidate_count"])
 
-        # 3) 후보 리뷰 임베딩이 없으면 생성해서 저장
+        # ---------------------------------------------------
+        # 4) 후보 리뷰 임베딩 생성 및 저장
+        # ---------------------------------------------------
+        # [중요]
+        # 여기서의 for문은 "비교"를 위한 for문이 아니라
+        # "아직 벡터가 없는 후보 리뷰들에 대해 임베딩을 생성/저장"하기 위한 for문
         for candidate in candidate_reviews:
+            # [예외 처리] 빈 본문은 건너뜀
             if not candidate.content or not candidate.content.strip():
                 continue
 
+            # [역할] 이미 임베딩이 있으면 재생성하지 않음 (캐싱 효과)
             exists = ReviewEmbedding.objects.filter(review=candidate).exists()
             if exists:
                 continue
 
+            # [역할] FastAPI에서 후보 리뷰 임베딩 생성
             candidate_embedding = FastAPIClient.get_embedding(candidate.content)
+
+            # [역할] 후보 리뷰 벡터를 DB에 저장
             ReviewEmbedding.objects.create(
                 review=candidate,
                 embedding=candidate_embedding,
             )
             logger.info(f"[EMBED] 후보 리뷰 임베딩 생성 | candidate_id={candidate.id}")
 
-        # 4) pgvector로 유사 리뷰 검색
+        # ---------------------------------------------------
+        # 5) pgvector로 유사 리뷰 검색
+        # ---------------------------------------------------
+        # [핵심]
+        # 이제부터는 Python에서 하나씩 비교하는 것이 아니라
+        # DB가 embedding 컬럼끼리 코사인 거리를 계산함
         similar_embedding_rows = (
             ReviewEmbedding.objects
             .select_related("review", "review__user")
             .exclude(review_id=source_review.id)
             .filter(review__product=source_review.product)
+            # [핵심] DB 내부에서 벡터 거리 계산
             .annotate(distance=CosineDistance("embedding", source_embedding))
+            # [핵심] 거리 작은 순 = 더 비슷한 순
             .order_by("distance")[:3]
         )
 
         results = []
 
-        # 기존 결과가 중복 저장되지 않게 update_or_create 사용
+        # ---------------------------------------------------
+        # 6) 검색 결과를 점수화하고 결과 테이블에 저장
+        # ---------------------------------------------------
         for item in similar_embedding_rows:
             compared_review = item.review
+
+            # [역할]
+            # 코사인 거리(distance)를 유사도 점수(score)로 변환
+            # distance가 작을수록 비슷하므로 1 - distance 사용
             score = round(float(1 - item.distance), 4)
 
+            # [역할] 기준점보다 낮은 점수는 제외
             if score < SIMILARITY_THRESHOLD:
                 continue
 
+            # [역할] 사람이 보기 쉬운 라벨 생성
             similarity_label = get_similarity_label(score)
 
+            # [역할]
+            # 유사도 결과 저장
+            # 이미 있으면 갱신, 없으면 생성
             saved_result, _ = ReviewSimilarityResult.objects.update_or_create(
                 source_review=source_review,
                 compared_review=compared_review,
@@ -346,6 +844,7 @@ def analyze_review_similarity_task(self, review_id: int, requested_by_id: int | 
                 f"[SAVE] 유사도 저장 | compared_review_id={compared_review.id} score={score}"
             )
 
+            # [역할] 프론트로 바로 보내기 좋은 형태로 결과 정리
             results.append({
                 "analysis_id": saved_result.id,
                 "review_id": compared_review.id,
@@ -356,9 +855,15 @@ def analyze_review_similarity_task(self, review_id: int, requested_by_id: int | 
                 "created_at": compared_review.created_at.strftime("%Y-%m-%d %H:%M"),
             })
 
+        # [역할] 점수 높은 순으로 정렬
         results.sort(key=lambda x: x["score"], reverse=True)
+
+        # [역할] 상위 3개만 최종 결과로 사용
         top_results = results[:3]
 
+        # ---------------------------------------------------
+        # 7) Task 완료 상태 저장
+        # ---------------------------------------------------
         task_status.status = AIAnalysisTask.STATUS_SUCCESS
         task_status.result_count = len(top_results)
         task_status.finished_at = timezone.now()
@@ -368,6 +873,9 @@ def analyze_review_similarity_task(self, review_id: int, requested_by_id: int | 
             f"[SUCCESS] Task 완료 | 결과 수={len(top_results)} task_id={self.request.id}"
         )
 
+        # ---------------------------------------------------
+        # 8) 프론트로 보낼 응답 데이터 구성
+        # ---------------------------------------------------
         response_data = {
             "source_review": {
                 "review_id": source_review.id,
@@ -382,6 +890,12 @@ def analyze_review_similarity_task(self, review_id: int, requested_by_id: int | 
             "status": "SUCCESS",
         }
 
+        # ---------------------------------------------------
+        # 9) Redis Pub/Sub으로 결과 전송
+        # ---------------------------------------------------
+        # [역할]
+        # WebSocket 서버가 이 채널을 구독하고 있다가
+        # 프론트 화면에 실시간 전달할 수 있음
         logger.info(f"[REDIS] 결과 publish | channel=task_result_{self.request.id}")
 
         redis_client.publish(
@@ -389,9 +903,13 @@ def analyze_review_similarity_task(self, review_id: int, requested_by_id: int | 
             json.dumps(response_data, ensure_ascii=False),
         )
 
+        # [역할] Celery task 반환값
         return response_data
 
     except Exception as e:
+        # ---------------------------------------------------
+        # 10) 실패 처리
+        # ---------------------------------------------------
         logger.exception(f"[ERROR] Task 실패 | task_id={self.request.id} error={str(e)}")
 
         task_status.status = AIAnalysisTask.STATUS_FAILURE
@@ -405,6 +923,7 @@ def analyze_review_similarity_task(self, review_id: int, requested_by_id: int | 
             "error": str(e),
         }
 
+        # [역할] 실패 결과도 Redis로 전달
         redis_client.publish(
             f"task_result_{self.request.id}",
             json.dumps(error_data, ensure_ascii=False),
@@ -520,19 +1039,19 @@ class Migration(migrations.Migration):
 ```
 
 인덱스는 `ai_gateway_reviewembedding` 테이블이 만들어진 뒤에 걸어야 하니까,  
-`dependencies`는 **`ReviewEmbedding`를 생성한 migration 파일명**을 써야 한다.
+`dependencies`는 `ReviewEmbedding`를 생성한 migration 파일명을 써야 합니다.
 
 예를 들어 `makemigrations ai_gateway`를 실행했더니 이런 파일이 생겼다면:
 ```
 0003_reviewembedding.py
 ```
 그럼 인덱스 migration은 반드시 이렇게 해야 한다:
-```
+```python
 dependencies = [  
     ("ai_gateway", "0003_reviewembedding"),  
 ]
 ```
-즉, **실제로 생성된 migration 파일명을 보고 맞춰야 한다.**
+즉, 실제로 생성된 migration 파일명을 보고 맞춰야 한다.
 
 
 인덱스 migration 적용 : 인덱스 파일 추가 후 실행

@@ -7,7 +7,7 @@
 
 ### 먼저 이해해야 하는 개념
 이 작업은 단순히 파일 하나 업로드하는 기능이 아닙니다. 
-이 페이지에서 구현하는 것은 서비스 안에서 “제품 이미지”와 “리뷰 이미지”를 서로 다른 책임으로 분리해서 설계하는 작업입니다.
+이 페이지에서 구현하는 것은 서비스 안에서 제품 이미지와 리뷰 이미지를 서로 다른 책임으로 분리해서 설계하는 작업입니다.
 
 겉으로 보면 둘 다 이미지 업로드처럼 보이지만, 역할은 완전히 다릅니다.
 
@@ -45,13 +45,55 @@ Product
 즉, DB 관계상으로는 분리되어 있지만  
 서비스 화면과 사용자 경험 측면에서는 제품과 리뷰 이미지가 같이 움직인다는 점이 중요합니다.
 
+---
 ### 이 작업에서 가장 신경 써야 하는 핵심
 
 `1.` 제품 이미지와 리뷰 이미지를 절대 같은 개념으로 보면 안 됩니다.
 
-처음 만들 때 가장 흔한 실수는  “어차피 둘 다 이미지니까 한 군데에서 같이 처리하면 되지 않나?” 이렇게 생각할수 있습니다.
+처음 만들 때 가장 흔한 실수는  어차피 둘 다 이미지니까 한 모델에서 같이 처리하면 되지 않나? 이렇게 생각할수 있습니다.
 
-하지만 실제로는 다릅니다.
+다시 말해서 
+❌ Product 모델 하나에 이미지 전부 넣어버리려는 생각
+❌ Review 모델 안에 제품 이미지까지 같이 넣으려는 생각 이렇게 생각하면 안됩니다.
+
+❌ 잘못된 생각 1: Product에 다 넣어버리기
+```python
+class Product(models.Model):
+    name = models.CharField(max_length=255)
+
+    # 상품 이미지
+    image = models.ImageField(upload_to="products/")
+
+    # ❌ 잘못된 설계 (리뷰 이미지까지 같이 넣으려는 경우)
+    review_image1 = models.ImageField(upload_to="reviews/")
+    review_image2 = models.ImageField(upload_to="reviews/")
+```
+
+❌ 잘못된 생각 2: Review에 다 넣어버리기
+```python
+class Review(models.Model):
+    content = models.TextField()
+
+    # 리뷰 이미지
+    image1 = models.ImageField(...)
+    image2 = models.ImageField(...)
+
+    # ❌ 이것도 이상 (제품 이미지까지 여기서 처리하려는 경우)
+    product_image = models.ImageField(...)
+```
+어차피 이미지니까 Product나 Review에서 다 처리하자 라는 생각은 잘못된 생각입니다.
+
+❌ 잘못된 생각 3: 하나의 Image 모델로 다 처리
+```python
+class Image(models.Model):
+    image = models.ImageField()
+
+    # ❌ product인지 review인지 구분 애매
+    product = models.ForeignKey(Product, null=True, blank=True)
+    review = models.ForeignKey(Review, null=True, blank=True)
+```
+
+이유는 다음과 같습니다.
 - 제품 이미지는 운영자/관리자 관점의 데이터
 - 리뷰 이미지는 사용자 업로드 데이터
 - 제품 이미지는 보통 1장 또는 대표 이미지 중심
@@ -59,8 +101,11 @@ Product
 - 제품 이미지는 상품을 설명하기 위한 정적 데이터
 - 리뷰 이미지는 후기와 함께 생성되는 동적 데이터
 
-그래서 `Product.image`는 Product 모델 내부에 두고,  
-`ReviewImage`는 별도 테이블로 분리하는 설계가 맞습니다.
+이런 실수를 하지 않기 위해서는 앱단위로 책임을 분리하는 개념을 잡는것이 중요합니다.
+- `products` 앱 → 상품 정보 관리
+- `reviews` 앱 → 리뷰 데이터 관리
+
+즉, 기능 기준으로 이미 분리되어 있기 때문에 모델도 자연스럽게 분리되는 것이 맞습니다.
 
 ---
 `2.` 리뷰 이미지는 반드시 별도 테이블로 분리해야 합니다.
@@ -80,7 +125,7 @@ Review 1 : N ReviewImage
 - 리뷰 본문 데이터와 이미지 데이터를 분리해서 관리 가능
 
 즉, 이 작업의 핵심은  
-“리뷰 본문”과 “리뷰 첨부파일”을 분리해서 저장하는 설계 감각을 익히는 것입니다.
+리뷰 본문과 리뷰 첨부파일을 분리해서 저장하는 설계 감각을 익히는 것입니다.
 
 ---
 `3.` 업로드 기능보다 더 중요한 것은 데이터 흐름입니다.
@@ -198,6 +243,9 @@ Review 1 : N ReviewImage
 
 이 관점을 먼저 이해해야 뒤에 나오는 모델, serializer, view, media 설정이 왜 그렇게 구성되어 있는지 자연스럽게 이해할 수 있습니다.
 
+![[Group 467.png]]
+[피그마로 확인하기](https://www.figma.com/design/T6Hf8Uww5OqyGYBU144pak/%EC%BD%94%EB%93%9C%EB%B6%84%EC%84%9D?node-id=335-47&t=PcHfZjafI2rrqTjL-0)
+
 ---
 이 작업의 목표
 제품의 대표 이미지와 리뷰의 첨부 이미지를 역할별로 분리해서 저장하고,  
@@ -267,7 +315,7 @@ class Product(models.Model):
 
 `backend/apps/products/serializers.py`
 ```python
-ffrom rest_framework import serializers
+from rest_framework import serializers
 from .models import Product
 
 
@@ -404,6 +452,7 @@ from .views import (
     ProductListPageView,
     ProductDetailPageView,
     ProductCreatePageView,
+    ProductUpdatePageView
 )
 
 router = DefaultRouter()
@@ -544,6 +593,34 @@ from rest_framework import serializers
 from .models import Review, ReviewImage, ReviewAI
 
 
+class ReviewImageSerializer(serializers.ModelSerializer):
+    """
+    리뷰 이미지 Serializer
+    """
+
+    class Meta:
+        model = ReviewImage
+        fields = [
+            "id",
+            "image",
+            "created_at",
+        ]
+
+
+class ReviewAISerializer(serializers.ModelSerializer):
+    """
+    리뷰 AI 분석 결과 Serializer
+    """
+
+    class Meta:
+        model = ReviewAI
+        fields = [
+            "sentiment",
+            "confidence",
+            "keywords",
+        ]
+        
+        
 class ReviewSerializer(serializers.ModelSerializer):
     """
     리뷰 Serializer
@@ -604,34 +681,6 @@ class ReviewSerializer(serializers.ModelSerializer):
             )
 
         return review
-
-
-class ReviewImageSerializer(serializers.ModelSerializer):
-    """
-    리뷰 이미지 Serializer
-    """
-
-    class Meta:
-        model = ReviewImage
-        fields = [
-            "id",
-            "image",
-            "created_at",
-        ]
-
-
-class ReviewAISerializer(serializers.ModelSerializer):
-    """
-    리뷰 AI 분석 결과 Serializer
-    """
-
-    class Meta:
-        model = ReviewAI
-        fields = [
-            "sentiment",
-            "confidence",
-            "keywords",
-        ]
 ```
 
 `backend/apps/reviews/views.py`
@@ -645,16 +694,16 @@ from .serializers import ReviewSerializer
 
 
 class ReviewViewSet(viewsets.ModelViewSet):
-	"""  
-	리뷰 CRUD API  
-		- GET /reviews/  
-		- GET /reviews/<id>/  
-		- POST /reviews/  
-		- PATCH /reviews/<id>/  
-		- DELETE /reviews/<id>/  
-	  
-	최소 이미지 업로드 테스트용 코드  
-	"""
+    """
+    리뷰 CRUD API
+    - GET /reviews/
+    - GET /reviews/<id>/
+    - POST /reviews/
+    - PATCH /reviews/<id>/
+    - DELETE /reviews/<id>/
+
+    최소 이미지 업로드 테스트용 코드
+    """
 
     queryset = Review.objects.all().order_by("-created_at")
     serializer_class = ReviewSerializer
@@ -739,6 +788,22 @@ if settings.DEBUG:
 서버 실행 전 기본 점검
 ```bash
 python manage.py check
+```
+결과
+```
+(backend) (.venv) youjung@DESKTOP-PJCRMMU:~/product-review-service2/backend$ python manage.py check
+System check identified some issues:
+
+WARNINGS:
+?: (staticfiles.W004) The directory '/home/youjung/product-review-service2/backend/static' in the STATICFILES_DIRS setting does not exist.
+
+System check identified 1 issue (0 silenced).
+(backend) (.venv) youjung@DESKTOP-PJCRMMU:~/product-review-service2/backend$ 
+```
+
+경고가 뜬건 지금은 `static/` 폴더가 없어서 나온 경고이므로 폴더를 미리 만들어도 되고 나중에 만들어도 됩니다.
+```bash
+mkdir static
 ```
 
 마이그레이션

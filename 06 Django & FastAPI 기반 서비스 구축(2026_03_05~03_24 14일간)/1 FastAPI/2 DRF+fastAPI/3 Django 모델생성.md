@@ -276,7 +276,6 @@ from django.contrib.auth import get_user_model
 User = get_user_model()
 
 user = User.objects.create_user(username="test", password="1234")
-user
 ```
 
 Product 생성 테스트
