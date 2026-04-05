@@ -556,7 +556,13 @@ def analyze_review_similarity_task(self, review_id: int, requested_by_id: int | 
             is_public=True,
         )
 
+<<<<<<< HEAD
+<<<<<<<< HEAD:06 Django & FastAPI 기반 서비스 구축(2026_03_05~03_24 14일간)/1 FastAPI/2 DRF+fastAPI/18-2 Celery(worker) Redis 기반 비동기 작업 처리 적용.md
 
+========
+>>>>>>>> 82f033a31524b140768822535221c3427a9b47f3:06 Django & FastAPI 기반 서비스 구축(2026_03_05~03_24 14일간)/1 FastAPI/2 DRF+fastAPI/18 Celery(worker) Redis 기반 비동기 작업 처리 적용.md
+=======
+>>>>>>> 82f033a31524b140768822535221c3427a9b47f3
         # [예외 처리]
         # 기준 리뷰 내용이 비어 있으면 작업 실패 처리 대상
         if not source_review.content.strip():

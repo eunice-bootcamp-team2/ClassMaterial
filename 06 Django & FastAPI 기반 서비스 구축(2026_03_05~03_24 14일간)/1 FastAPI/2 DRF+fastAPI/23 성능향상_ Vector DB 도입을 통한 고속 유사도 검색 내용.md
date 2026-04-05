@@ -14,28 +14,44 @@ PostgreSQL는 우리가 단순히 데이터를 저장을 하는 기능으로 알
 
 아래의 내용은 DB 공통 언어인 SQL이고 거의 모든 DB에서 사용하는 공통 언어입니다
 1️⃣ 저장
+<<<<<<< HEAD
 ```sql
+=======
+```
+>>>>>>> 82f033a31524b140768822535221c3427a9b47f3
 INSERT INTO review (content) VALUES ('좋아요');
 ```
 데이터 넣기
 
 ---
 2️⃣ 검색
+<<<<<<< HEAD
 ```sql
+=======
+```
+>>>>>>> 82f033a31524b140768822535221c3427a9b47f3
 SELECT * FROM review WHERE product_id=1;
 ```
 조건으로 찾기
 
 ---
 3️⃣ 계산
+<<<<<<< HEAD
 ```sql
+=======
+```
+>>>>>>> 82f033a31524b140768822535221c3427a9b47f3
 SELECT COUNT(*) FROM review;
 ```
 개수 계산
 
 ---
 4️⃣ 정렬
+<<<<<<< HEAD
 ```sql
+=======
+```
+>>>>>>> 82f033a31524b140768822535221c3427a9b47f3
 SELECT * FROM review ORDER BY created_at DESC;
 ```
 최신순 정렬
@@ -584,6 +600,10 @@ DB(pgvector) 내부 비교
 → 벡터 생성 요청
 ```
 
+<<<<<<< HEAD
+=======
+
+>>>>>>> 82f033a31524b140768822535221c3427a9b47f3
 위의 코드가 수정되었으므로 이부분은 삭제합니다.
 ```python
 # EmbeddingResponse,
